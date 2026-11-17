@@ -83,7 +83,8 @@ CREATE TABLE IF NOT EXISTS messages (
     parse_note   TEXT,
     -- 1 while a person still has to look at this reply (nothing usable in it,
     -- or it contradicts what is recorded), whatever the state of its request.
-    needs_review INTEGER NOT NULL DEFAULT 0
+    needs_review INTEGER NOT NULL DEFAULT 0,
+    ai_tries     INTEGER NOT NULL DEFAULT 0   -- failed attempts to read it with the AI model
 );
 
 -- redeemed stays NULL until the merchant reports a number. NULL (no answer)
@@ -140,6 +141,8 @@ def connect(path: Path = DEFAULT_DB) -> sqlite3.Connection:
     con.execute("PRAGMA foreign_keys = ON")
     con.executescript(SCHEMA)
     # Databases made before a column existed get it here.
-    if "needs_review" not in {r[1] for r in con.execute("PRAGMA table_info(messages)")}:
-        con.execute("ALTER TABLE messages ADD COLUMN needs_review INTEGER NOT NULL DEFAULT 0")
+    have = {r[1] for r in con.execute("PRAGMA table_info(messages)")}
+    for column in ("needs_review", "ai_tries"):
+        if column not in have:
+            con.execute(f"ALTER TABLE messages ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0")
     return con

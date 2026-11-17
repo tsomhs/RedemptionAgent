@@ -112,6 +112,8 @@ def make_handler(cfg):
                 return self._json({"error": "Δεν βρέθηκε"}, 404)
             except (review.ReviewError, ValueError) as e:
                 return self._json({"error": str(e)}, 400)
+            except Exception as e:  # never drop the connection without an answer
+                return self._json({"error": f"Εσωτερικό σφάλμα ({type(e).__name__})"}, 500)
             finally:
                 con.close()
 
@@ -159,13 +161,15 @@ def make_handler(cfg):
                 return self._json({"error": str(e) or "Μη έγκυρα δεδομένα"}, 400)
             except (OSError, mail.smtplib.SMTPException, mail.imaplib.IMAP4.error) as e:
                 return self._json({"error": f"Σφάλμα σύνδεσης με τον mail server: {e}"}, 502)
+            except Exception as e:  # never drop the connection without an answer
+                return self._json({"error": f"Εσωτερικό σφάλμα ({type(e).__name__})"}, 500)
             finally:
                 con.close()
 
     return Handler
 
 
-def serve(cfg, port: int = 8765, host: str = "127.0.0.1"):
-    """host stays 127.0.0.1: the dashboard has no login, so it must not be
-    reachable from other computers."""
-    return ThreadingHTTPServer((host, port), make_handler(cfg))
+def serve(cfg, port: int = 8765):
+    """This computer only (127.0.0.1): the dashboard has no login, so it must
+    not be reachable from other machines."""
+    return ThreadingHTTPServer(("127.0.0.1", port), make_handler(cfg))

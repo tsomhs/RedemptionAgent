@@ -31,7 +31,7 @@ def _to_int(value, what, where):
     try:
         number = float(value)
     except (TypeError, ValueError):
-        raise IngestError(f"{where}: το πεδίο {what} δεν είναι αριθμός ({value!r})")
+        raise IngestError(f"{where}: το πεδίο {what} δεν είναι αριθμός ({value!r})") from None
     if number < 0 or number != int(number):
         raise IngestError(f"{where}: μη έγκυρη τιμή {what} ({value!r})")
     return int(number)
@@ -43,11 +43,11 @@ def read_file(path: Path):
     try:
         wb = load_workbook(path, read_only=True, data_only=True)
     except Exception as e:  # not an Excel file, or one still being copied
-        raise IngestError(f"Το αρχείο {Path(path).name} δεν διαβάζεται ως Excel ({type(e).__name__})")
+        raise IngestError(f"Το αρχείο {Path(path).name} δεν διαβάζεται ως Excel ({type(e).__name__})") from None
     try:
         rows = _read_sheets(wb)
     finally:
-        wb.close()  # read-only mode keeps the file open (and locked on Windows)
+        wb.close()  # read-only mode keeps the file open until told otherwise
     if not rows:
         raise IngestError("Το αρχείο δεν περιέχει καμία προσφορά")
     return rows
@@ -68,7 +68,7 @@ def _read_sheets(wb):
             if row is None or all(v is None or str(v).strip() == "" for v in row):
                 continue
             where = f"Φύλλο «{ws.title}», γραμμή {n}"
-            get = lambda c: row[cols[c]] if cols[c] < len(row) else None
+            get = lambda c, row=row, cols=cols: row[cols[c]] if cols[c] < len(row) else None
             uuid = str(get("UUID") or "").strip()
             name = str(get("Admin Name") or "").strip()
             if not uuid or not name:

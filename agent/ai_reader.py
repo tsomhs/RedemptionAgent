@@ -10,7 +10,6 @@ database stays in code (replies.py), under the same rules as structured replies.
 import base64
 import re
 import time
-from pathlib import Path
 from typing import List, Literal, Optional
 
 from openpyxl import load_workbook
@@ -98,7 +97,7 @@ def _attachment_parts(paths) -> list:
     that it could not see."""
     parts = []
     for rel in paths:
-        path = ROOT / rel.replace("\\", "/")  # paths saved by an older Windows run
+        path = ROOT / rel
         suffix = path.suffix.lower()
         if suffix in (".xlsx", ".xlsm"):
             wb = load_workbook(path, read_only=True, data_only=True)
@@ -167,18 +166,18 @@ def _read_with_gemini(cfg: Config, parts, question) -> Reading:
                 if attempt < 3 and "per minute" in str(e).lower():
                     time.sleep(min(float(wait.group(1)) if wait else 30.0, 60.0) + 2)
                     continue
-                raise ReaderError("όριο χρήσης του Gemini API· δοκίμασε ξανά αργότερα")
+                raise ReaderError("όριο χρήσης του Gemini API· δοκίμασε ξανά αργότερα") from None
             if "API_KEY_INVALID" in str(e) or e.code in (401, 403):
-                raise ReaderError("το GEMINI_API_KEY δεν έγινε δεκτό")
-            raise ReaderError(f"σφάλμα Gemini API {e.code}: {e.message}")
+                raise ReaderError("το GEMINI_API_KEY δεν έγινε δεκτό") from None
+            raise ReaderError(f"σφάλμα Gemini API {e.code}: {e.message}") from None
         except errors.APIError as e:
-            raise ReaderError(f"σφάλμα Gemini API {e.code}: {e.message}")
+            raise ReaderError(f"σφάλμα Gemini API {e.code}: {e.message}") from None
         except OSError:
-            raise ReaderError("δεν υπάρχει σύνδεση με το Gemini API")
+            raise ReaderError("δεν υπάρχει σύνδεση με το Gemini API") from None
     try:
         return Reading.model_validate_json(response.text or "")
     except ValueError:
-        raise ReaderError("το μοντέλο δεν έδωσε απάντηση στη ζητούμενη μορφή")
+        raise ReaderError("το μοντέλο δεν έδωσε απάντηση στη ζητούμενη μορφή") from None
 
 
 def _attachment_blocks(paths) -> list:
@@ -232,13 +231,13 @@ def read_reply(cfg: Config, *, program, period_label, merchant, offers, body, at
             output_format=Reading,
         )
     except anthropic.AuthenticationError:
-        raise ReaderError("το ANTHROPIC_API_KEY δεν έγινε δεκτό")
+        raise ReaderError("το ANTHROPIC_API_KEY δεν έγινε δεκτό") from None
     except anthropic.RateLimitError:
-        raise ReaderError("όριο χρήσης του API· δοκίμασε ξανά αργότερα")
+        raise ReaderError("όριο χρήσης του API· δοκίμασε ξανά αργότερα") from None
     except anthropic.APIStatusError as e:
-        raise ReaderError(f"σφάλμα API {e.status_code}: {e.message}")
+        raise ReaderError(f"σφάλμα API {e.status_code}: {e.message}") from None
     except anthropic.APIConnectionError:
-        raise ReaderError("δεν υπάρχει σύνδεση με το API")
+        raise ReaderError("δεν υπάρχει σύνδεση με το API") from None
     if response.stop_reason == "refusal" or response.parsed_output is None:
         raise ReaderError(f"το μοντέλο δεν έδωσε απάντηση ({response.stop_reason})")
     return response.parsed_output

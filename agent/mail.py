@@ -7,6 +7,7 @@ import imaplib
 import json
 import re
 import smtplib
+import uuid
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from email import policy
@@ -141,25 +142,44 @@ SEND_LOCK_MINUTES = 15
 
 
 @contextmanager
-def sending(con, now):
+def sending(con):
     """Only one process sends at a time. Without this, the scheduler, a command
     typed in a terminal and the "send" button could each pick up the same
-    request and email it twice. A lock left behind by a crash expires."""
-    stale = _iso(now - timedelta(minutes=SEND_LOCK_MINUTES))
+    request and email it twice.
+
+    Yields a function to call before every email: it renews the lock, and
+    raises if the lock was lost (this run stalled long enough for another to
+    take over), so that a stalled run stops instead of sending on top of the
+    other. A lock left behind by a crash expires after SEND_LOCK_MINUTES."""
+    token = uuid.uuid4().hex
+
+    def stamp():
+        return f"{_iso(utcnow())}|{token}"
+
+    stale = _iso(utcnow() - timedelta(minutes=SEND_LOCK_MINUTES))
     with con:
         got = con.execute(
             """INSERT INTO automation_state (key, value) VALUES ('lock.send', ?)
                ON CONFLICT(key) DO UPDATE SET value = excluded.value
-                WHERE automation_state.value < ?""",
-            (_iso(now), stale),
+                WHERE substr(automation_state.value, 1, 19) < ?""",
+            (stamp(), stale),
         ).rowcount
     if not got:
         raise MailError("Γίνεται ήδη αποστολή από άλλη διεργασία· δοκιμάστε ξανά σε λίγο")
+
+    def still_mine():
+        with con:
+            kept = con.execute(
+                "UPDATE automation_state SET value=? WHERE key='lock.send' AND value LIKE ?", (stamp(), f"%|{token}")
+            ).rowcount
+        if not kept:
+            raise MailError("Η αποστολή διακόπηκε: την ανέλαβε άλλη διεργασία")
+
     try:
-        yield
+        yield still_mine
     finally:
         with con:
-            con.execute("DELETE FROM automation_state WHERE key='lock.send'")
+            con.execute("DELETE FROM automation_state WHERE key='lock.send' AND value LIKE ?", (f"%|{token}",))
 
 
 def _note_refused(con, request_id, refused, now):
@@ -170,12 +190,16 @@ def _note_refused(con, request_id, refused, now):
         record_bounce(con, request_id, list(refused), f"Ο mail server αρνήθηκε μέρος των παραληπτών. {reason}", now)
 
 
+def _reason(e) -> str:
+    return f"{e.smtp_code} {e.smtp_error.decode('utf-8', 'replace') if isinstance(e.smtp_error, bytes) else e.smtp_error}"
+
+
 def send_requests(con, cfg: Config, period, program, now, limit=None, only=None) -> dict:
-    with sending(con, now):
-        return _send_requests(con, cfg, period, program, now, limit, only)
+    with sending(con) as still_mine:
+        return _send_requests(con, cfg, period, program, now, limit, only, still_mine)
 
 
-def _send_requests(con, cfg: Config, period, program, now, limit=None, only=None) -> dict:
+def _send_requests(con, cfg: Config, period, program, now, limit, only, still_mine) -> dict:
     """Send the draft requests of the period. Each request is committed right
     after its email leaves, so a crash mid-run cannot cause a second send."""
     rows = con.execute(
@@ -195,7 +219,7 @@ def _send_requests(con, cfg: Config, period, program, now, limit=None, only=None
         ]
     if limit:
         rows = rows[:limit]
-    out = {"sent": [], "blocked": {}, "no_contact": [], "refused": {}}
+    out = {"sent": [], "blocked": {}, "no_contact": [], "refused": {}, "failed": {}}
     if not rows:
         return out
     smtp = None
@@ -209,6 +233,10 @@ def _send_requests(con, cfg: Config, period, program, now, limit=None, only=None
             if bad:
                 out["blocked"][r["name"]] = bad
                 continue
+            still_mine()
+            # Looked at again right before sending: the list above may be minutes old.
+            if con.execute("SELECT status FROM requests WHERE id=?", (r["id"],)).fetchone()["status"] != "draft":
+                continue
             smtp = smtp or _smtp(cfg)
             msg = _build(cfg.mail_from, to, r["subject"], r["body"])
             try:
@@ -221,6 +249,11 @@ def _send_requests(con, cfg: Config, period, program, now, limit=None, only=None
                     con.execute("UPDATE requests SET status='undelivered' WHERE id=?", (r["id"],))
                     record_bounce(con, r["id"], to, f"Ο mail server αρνήθηκε τους παραλήπτες. {reason}", now)
                 out["refused"][r["name"]] = to
+                continue
+            except smtplib.SMTPResponseException as e:
+                # The server rejected this one email (its content or sender).
+                # It stays a draft and the others are still tried.
+                out["failed"][r["name"]] = _reason(e)
                 continue
             with con:
                 con.execute(
@@ -259,18 +292,18 @@ def _missing_offers(con, request_id, period):
 
 
 def send_followups(con, cfg: Config, now, label_for) -> dict:
-    with sending(con, now):
-        return _send_followups(con, cfg, now, label_for)
+    with sending(con) as still_mine:
+        return _send_followups(con, cfg, now, label_for, still_mine)
 
 
-def _send_followups(con, cfg: Config, now, label_for) -> dict:
+def _send_followups(con, cfg: Config, now, label_for, still_mine) -> dict:
     """One reminder per overdue request, up to MAX_FOLLOWUPS: FOLLOWUP_DAYS
     after the request and after each previous reminder.
 
     Requests still waiting ('sent') get the general reminder. Requests answered
     in part ('partial') stay open for what is missing and get a reminder that
     lists only those offers. Complete, unreadable and undelivered requests are
-    not chased."""
+    not chased, and neither is a partner whose latest reply nobody has read yet."""
     rows = con.execute(
         f"""SELECT r.id, r.subject, r.period, r.status, r.sent_at, r.followups_sent, r.merchant_id, m.name,
                   {THREAD_ID_SQL} AS first_id,
@@ -278,16 +311,24 @@ def _send_followups(con, cfg: Config, now, label_for) -> dict:
                       AND (x.kind IN ('followup', 'clarification')
                            OR (x.direction='in' AND x.kind='reply'))) AS last_contact
              FROM requests r JOIN merchants m ON m.id = r.merchant_id
-            WHERE r.status IN ('sent', 'partial') ORDER BY m.name"""
+            WHERE r.status IN ('sent', 'partial')
+              AND NOT EXISTS (SELECT 1 FROM messages x WHERE x.request_id = r.id AND x.direction = 'in'
+                                 AND x.kind = 'reply' AND (x.processed_at IS NULL OR x.needs_review = 1))
+            ORDER BY m.name"""
     ).fetchall()
-    out = {"sent": [], "exhausted": [], "blocked": {}}
+    out = {"sent": [], "exhausted": [], "blocked": {}, "failed": {}}
     smtp = None
     try:
         for r in rows:
             if r["followups_sent"] >= cfg.max_followups:
                 out["exhausted"].append(r["name"])
                 continue
-            due = _parse(r["sent_at"]) + timedelta(days=cfg.followup_days * (r["followups_sent"] + 1))
+            # A request that never left (its first send was refused) but got
+            # an answer some other way has no send date: count from the answer.
+            start = r["sent_at"] or r["last_contact"]
+            if not start:
+                continue
+            due = _parse(start) + timedelta(days=cfg.followup_days * (r["followups_sent"] + 1))
             if r["last_contact"]:
                 # Keep a full interval after the last reminder, clarification or
                 # reply. Without this, missed runs would send the reminders one
@@ -309,6 +350,11 @@ def _send_followups(con, cfg: Config, now, label_for) -> dict:
                 body = PARTIAL_FOLLOWUP_TEXT.format(label=label_for(r["period"]), lines=lines)
             else:
                 body = FOLLOWUP_TEXT.format(label=label_for(r["period"]))
+            still_mine()
+            # Looked at again right before sending: the list above may be minutes old.
+            fresh = con.execute("SELECT status, followups_sent FROM requests WHERE id=?", (r["id"],)).fetchone()
+            if (fresh["status"], fresh["followups_sent"]) != (r["status"], r["followups_sent"]):
+                continue
             smtp = smtp or _smtp(cfg)
             msg = _build(cfg.mail_from, to, "Re: " + r["subject"], body, r["first_id"])
             try:
@@ -323,6 +369,9 @@ def _send_followups(con, cfg: Config, now, label_for) -> dict:
                         con.execute("UPDATE requests SET status='undelivered' WHERE id=?", (r["id"],))
                     record_bounce(con, r["id"], to, f"Ο mail server αρνήθηκε τους παραλήπτες της υπενθύμισης. {reason}", now)
                 out["blocked"][r["name"]] = to
+                continue
+            except smtplib.SMTPResponseException as e:
+                out["failed"][r["name"]] = _reason(e)
                 continue
             with con:
                 con.execute(
@@ -392,7 +441,6 @@ def _save_attachments(msg, message_id) -> list:
         used.add(name.lower())
         folder.mkdir(parents=True, exist_ok=True)
         (folder / name).write_bytes(part.get_payload(decode=True) or b"")
-        # Forward slashes, so a database made on Windows also reads on Linux or macOS.
         saved.append((folder / name).relative_to(ROOT).as_posix())
     return saved
 
@@ -471,6 +519,7 @@ def store_incoming(con, cfg: Config, msg, now, out: dict):
     if not msg["Message-ID"]:
         # The same id every time this email is seen, so it is stored once.
         seed = f"{msg['From']}|{msg['Date']}|{msg['Subject']}|{_text_of(msg)}"
+        del msg["Message-ID"]  # an empty header would otherwise make the assignment fail
         msg["Message-ID"] = f"<{hashlib.sha1(seed.encode('utf-8', 'replace')).hexdigest()}@no-id.local>"
     if con.execute("SELECT 1 FROM messages WHERE message_id=?", (msg["Message-ID"],)).fetchone():
         return
@@ -491,7 +540,7 @@ def store_incoming(con, cfg: Config, msg, now, out: dict):
             out["auto"].append((sender, msg["Subject"] or ""))
             return
         req = con.execute(
-            f"""SELECT r.status, m.name,
+            """SELECT r.status, m.name,
                        (SELECT to_addrs FROM messages x WHERE x.request_id=r.id
                          AND x.kind IN ('initial', 'resend') ORDER BY x.id DESC LIMIT 1) AS sent_to
                   FROM requests r JOIN merchants m ON m.id = r.merchant_id WHERE r.id=?""",
@@ -526,20 +575,21 @@ def store_incoming(con, cfg: Config, msg, now, out: dict):
     (out["unmatched"] if not request_id else out["auto" if kind == "auto" else "new"]).append(entry)
 
 
-def _store_unreadable(con, msg, message_id, error, now):
+def _store_unreadable(con, msg, message_id, error, now) -> bool:
+    """True when the email was stored now, False when it already was."""
     try:
         subject = str(msg["Subject"] or "")
     except Exception:
         subject = ""
     with con:
-        con.execute(
+        return bool(con.execute(
             """INSERT OR IGNORE INTO messages (request_id, direction, kind, message_id, from_addr, subject,
                                               body, attachments, at, needs_review)
                VALUES (NULL, 'in', 'reply', ?, ?, ?, ?, '[]', ?, 1)""",
             (message_id, parseaddr(str(msg["From"] or ""))[1].lower(), subject,
              f"Το email δεν μπόρεσε να διαβαστεί αυτόματα ({type(error).__name__}: {error}). "
              "Ανοίξτε το στο mailbox.", _iso(now)),
-        )  # fmt: skip
+        ).rowcount)  # fmt: skip
 
 
 def fetch_replies(con, cfg: Config, now) -> dict:
@@ -572,8 +622,8 @@ def fetch_replies(con, cfg: Config, now) -> dict:
             except Exception as e:
                 # One email we cannot handle must not hide the ones after it.
                 # It is kept, unread, for a person; it will not be tried again.
-                _store_unreadable(con, msg, mid or f"<{hashlib.sha1(raw).hexdigest()}@no-id.local>", e, now)
-                out["unmatched"].append((parseaddr(str(msg["From"] or ""))[1].lower(), "(δεν διαβάστηκε)"))
+                if _store_unreadable(con, msg, mid or f"<{hashlib.sha1(raw).hexdigest()}@no-id.local>", e, now):
+                    out["unmatched"].append((parseaddr(str(msg["From"] or ""))[1].lower(), "(δεν διαβάστηκε)"))
     finally:
         try:
             m.logout()

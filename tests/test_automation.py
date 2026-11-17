@@ -5,7 +5,7 @@ from datetime import date, datetime, timezone
 
 from openpyxl import Workbook
 
-from base import OFFER_A, OFFER_B, PERIOD, AgentTestCase, day
+from base import OFFER_A, OFFER_B, AgentTestCase, day
 from agent import automation, mail, settings, workdays
 
 HEADER = ["UUID", "Admin Name", "Category", "Assignments", "Unique Users", "Engage URL"]

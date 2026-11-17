@@ -63,7 +63,7 @@ def _dates(value, label):
         try:
             out.add(date.fromisoformat(str(item).strip()).isoformat())
         except ValueError:
-            raise SettingsError(f"{label}: «{item}» δεν είναι ημερομηνία της μορφής ΕΕΕΕ-ΜΜ-ΗΗ")
+            raise SettingsError(f"{label}: «{item}» δεν είναι ημερομηνία της μορφής ΕΕΕΕ-ΜΜ-ΗΗ") from None
     return sorted(out)
 
 

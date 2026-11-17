@@ -4,9 +4,8 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-# Where the env file, the database and received attachments live. By default
-# the project folder; AGENT_HOME points it elsewhere (e.g. a mounted volume).
-ROOT = Path(os.environ.get("AGENT_HOME") or Path(__file__).resolve().parent.parent).resolve()
+# The project folder: the env file, the database and received attachments live here.
+ROOT = Path(__file__).resolve().parent.parent
 
 
 @dataclass

@@ -1,4 +1,4 @@
-# The same line endings on every system (Windows would otherwise convert them).
+# The same line endings for everyone.
 * text=auto eol=lf
 *.docx binary
 *.xlsx binary

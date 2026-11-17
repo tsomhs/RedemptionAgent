@@ -15,6 +15,7 @@ import json
 import re
 
 CODE_LEN = 8
+AI_TRIES = 5  # after this many failed readings a reply is left to a person
 _LINE = re.compile(r"\[([0-9a-fA-F]{8})\][^\n]*?[:=]\s*(\d+)\s*\.?\s*$")
 
 
@@ -81,7 +82,7 @@ def process(con, now_iso: str, cfg=None) -> list:
     human, exactly as before."""
     results = []
     pending = con.execute(
-        """SELECT x.id, x.request_id, x.message_id, x.body, x.from_addr, x.attachments,
+        """SELECT x.id, x.request_id, x.message_id, x.body, x.from_addr, x.attachments, x.ai_tries,
                   m.name, r.period, r.program
              FROM messages x
              JOIN requests r ON r.id = x.request_id
@@ -114,9 +115,19 @@ def process(con, now_iso: str, cfg=None) -> list:
                 values, ai_note, reply_type, is_correction = _read_with_ai(cfg, msg, offers, recorded)
                 from_ai = True
             except Exception as e:  # ai_reader.ReaderError, or a missing library
-                # Not marked as processed: the next run tries this reply again.
-                res.update(status="replied", filled=0, total=len(offers),
-                           note=f"η ανάγνωση με AI απέτυχε ({e})· θα ξαναδοκιμαστεί")
+                # Tried again on the next runs, a few times. Meanwhile, and for
+                # good after the last try, the reply is flagged: a person sees
+                # it in the queue whatever the state of its request.
+                tries = int(msg["ai_tries"] or 0) + 1
+                gave_up = tries >= AI_TRIES
+                note = (f"η ανάγνωση με AI απέτυχε {tries} φορές ({e})· θέλει έλεγχο" if gave_up
+                        else f"η ανάγνωση με AI απέτυχε ({e})· θα ξαναδοκιμαστεί")  # fmt: skip
+                with con:
+                    con.execute(
+                        "UPDATE messages SET ai_tries=?, needs_review=1, parse_note=?, processed_at=? WHERE id=?",
+                        (tries, note, now_iso if gave_up else None, msg["id"]),
+                    )
+                res.update(status="replied", filled=0, total=len(offers), note=note)
                 results.append(res)
                 continue
         with con:

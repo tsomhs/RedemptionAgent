@@ -22,12 +22,7 @@ def cmd_ingest(con, cfg, a):
 
 def _athens_today(now):
     """The calendar date in Greece: the monthly cycle follows Europe/Athens."""
-    from zoneinfo import ZoneInfo
-
-    try:
-        return now.astimezone(ZoneInfo("Europe/Athens")).date()
-    except Exception:  # no time zone database on this machine
-        return now.date()
+    return now.astimezone(automation.TZ).date()
 
 
 def cmd_contacts_export(con, cfg, a):
@@ -78,6 +73,8 @@ def cmd_send(con, cfg, a):
         print(f"  Χωρίς email: {name}")
     for name, to in r["refused"].items():
         print(f"  ΑΝΕΠΙΔΟΤΟ {name}: ο mail server αρνήθηκε {', '.join(to)}")
+    for name, why in r["failed"].items():
+        print(f"  ΑΠΟΡΡΙΦΘΗΚΕ {name}: {why} (μένει πρόχειρο)")
 
 
 def cmd_followups(con, cfg, a):
@@ -233,7 +230,7 @@ def cmd_status(con, cfg, a):
 
 
 def cmd_dashboard(con, cfg, a):
-    server = web.serve(cfg, a.port, a.host)
+    server = web.serve(cfg, a.port)
     url = f"http://127.0.0.1:{a.port}/"
     print(f"Dashboard: {url}  (βάση: {cfg.db.name}, λειτουργία: {cfg.mode})")
     print("Τρέχει μόνο σε αυτόν τον υπολογιστή. Ctrl+C για τερματισμό.")
@@ -266,7 +263,7 @@ def cmd_run(con, cfg, a):
         target=automation.run_forever, args=(lambda: db.connect(cfg.db), cfg, stop), daemon=True
     )
     worker.start()
-    server = web.serve(cfg, a.port, a.host)
+    server = web.serve(cfg, a.port)
     print(f"Χρονοπρογραμματιστής και dashboard: http://127.0.0.1:{a.port}/  (βάση: {cfg.db.name}, λειτουργία: {cfg.mode})")
     print("Οι αυτοματισμοί ρυθμίζονται στην καρτέλα «Ρυθμίσεις». Ctrl+C για τερματισμό.")
     try:
@@ -363,14 +360,10 @@ def main(argv=None):
 
     s = add("dashboard", cmd_dashboard, "άνοιγμα του dashboard στον browser")
     s.add_argument("--port", type=int, default=8765)
-    s.add_argument("--host", default="127.0.0.1",
-                   help="διεύθυνση ακρόασης· μην την αλλάζετε, το dashboard δεν έχει login")
     s.add_argument("--no-browser", action="store_true", help="χωρίς αυτόματο άνοιγμα browser")
 
     s = add("run", cmd_run, "χρονοπρογραμματιστής και dashboard μαζί (η κανονική λειτουργία)")
     s.add_argument("--port", type=int, default=8765)
-    s.add_argument("--host", default="127.0.0.1",
-                   help="διεύθυνση ακρόασης· μην την αλλάζετε, το dashboard δεν έχει login")
 
     add("tick", cmd_tick, "ένα πέρασμα του χρονοπρογραμματιστή (π.χ. από cron)")
 

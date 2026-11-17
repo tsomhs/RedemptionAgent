@@ -96,6 +96,15 @@ class IncomingMailTests(AgentTestCase):
             mail.store_incoming(self.con, self.cfg, message_from_string(self.raw(), policy=policy.default), day(1), OUT())
         self.assertEqual(self.con.execute("SELECT count(*) FROM messages WHERE direction='in'").fetchone()[0], 1)
 
+    def test_empty_message_id_header(self):
+        """Email με κενή κεφαλίδα Message-ID διαβάζεται κανονικά και αποθηκεύεται μία φορά"""
+        for _ in range(2):
+            msg = message_from_string(self.raw("Message-ID:\n"), policy=policy.default)
+            mail.store_incoming(self.con, self.cfg, msg, day(1), OUT())
+        self.assertEqual(self.con.execute("SELECT count(*) FROM messages WHERE direction='in'").fetchone()[0], 1)
+        replies.process(self.con, mail._iso(day(1)), self.cfg)
+        self.assertEqual(self.redeemed(OFFER_A), (3, "reported"))
+
     def test_unknown_charset_does_not_crash(self):
         """Email με άγνωστη κωδικοποίηση χαρακτήρων διαβάζεται όσο γίνεται, χωρίς σφάλμα"""
         msg = message_from_bytes(
@@ -176,14 +185,108 @@ class SendingTests(AgentTestCase):
 
     def test_only_one_sender_at_a_time(self):
         """Δύο αποστολές ταυτόχρονα δεν γίνονται: η δεύτερη αρνείται, και το κλείδωμα λήγει αν μείνει πίσω"""
-        with mail.sending(self.con, day(7)):
+        with mail.sending(self.con):
             with self.assertRaises(mail.MailError):
                 self.followups(day(7))
             self.assertEqual(self.smtp.sent, [])
         self.assertEqual(len(self.followups(day(7))["sent"]), 2)          # released afterwards
-        self.con.execute("INSERT INTO automation_state VALUES ('lock.send', ?)", (mail._iso(day(14) - timedelta(hours=1)),))
+        old = mail._iso(mail.utcnow() - timedelta(hours=1)) + "|someone-else"
+        self.con.execute("INSERT INTO automation_state VALUES ('lock.send', ?)", (old,))
         self.con.commit()
         self.assertEqual(len(self.followups(day(14))["sent"]), 2)         # a stale lock does not block for ever
+
+    def test_a_stalled_run_stops_when_another_takes_over(self):
+        """Αποστολή που κόλλησε και την ανέλαβε άλλη διεργασία σταματά· δεν στέλνει πάνω από την άλλη"""
+        real = self.smtp.send_message
+
+        def send(msg):  # after the first email, another process takes the lock
+            real(msg)
+            with self.con:
+                self.con.execute("UPDATE automation_state SET value=? WHERE key='lock.send'",
+                                 (mail._iso(mail.utcnow()) + "|another-process",))  # fmt: skip
+
+        self.smtp.send_message = send
+        with self.assertRaises(mail.MailError):
+            self.followups(day(7))
+        self.assertEqual(len(self.smtp.sent), 1)
+        # The other process's lock is left alone.
+        self.assertIn("another-process", self.con.execute("SELECT value FROM automation_state WHERE key='lock.send'").fetchone()[0])
+
+    def test_one_rejected_email_does_not_stop_the_rest(self):
+        """Αν ο server απορρίψει ένα email (όχι τον παραλήπτη), τα υπόλοιπα στέλνονται και αυτό αναφέρεται"""
+        real = self.smtp.send_message
+
+        def send(msg):
+            if "avis" in msg["To"]:
+                raise mail.smtplib.SMTPDataError(554, b"Message rejected")
+            real(msg)
+
+        self.smtp.send_message = send
+        r = self.followups(day(7))
+        self.assertEqual(r["sent"], [("Kotsovolos", 1)])
+        self.assertEqual(r["failed"], {"Avis": "554 Message rejected"})
+        self.assertEqual(self.status(self.a), "sent")
+
+    def test_request_that_never_left_does_not_break_reminders(self):
+        """Αίτημα που δεν έφυγε ποτέ αλλά απέκτησε απάντηση δεν μπλοκάρει τις υπενθυμίσεις των άλλων"""
+        with self.con:
+            self.con.execute("UPDATE requests SET status='partial', sent_at=NULL WHERE id=?", (self.a,))
+            self.con.execute("DELETE FROM messages WHERE request_id=?", (self.a,))
+        self.assertEqual(self.followups(day(7))["sent"], [("Kotsovolos", 1)])
+        with self.con:
+            self.con.execute("UPDATE requests SET status='undelivered' WHERE id=?", (self.a,))
+        self.assertNotIn(self.a, [r["id"] for r in review.queue(self.con)["open_requests"]])
+
+    def test_no_reminder_while_a_reply_is_unread(self):
+        """Όσο μια απάντηση περιμένει ανάγνωση ή έλεγχο, ο συνεργάτης δεν παίρνει υπενθύμιση"""
+        with self.con:
+            self.con.execute(
+                """INSERT INTO messages (request_id, direction, kind, message_id, from_addr, body, attachments, at)
+                   VALUES (?, 'in', 'reply', '<waiting@x>', 'avis@partners.test', 'κείμενο', '[]', ?)""",
+                (self.a, mail._iso(day(1))),
+            )
+        self.assertEqual(self.followups(day(30))["sent"], [("Kotsovolos", 1)])
+
+
+class AiFailureTests(AgentTestCase):
+    def setUp(self):
+        super().setUp()
+        from agent import ai_reader
+
+        self.ai_reader, self._real = ai_reader, ai_reader.read_reply
+        self.cfg.gemini_key = "test"
+
+        def broken(cfg, **kw):
+            raise ai_reader.ReaderError("το κλειδί δεν έγινε δεκτό")
+
+        ai_reader.read_reply = broken
+        self.rid = self.sent_request("Kotsovolos", "kotsovolos@partners.test")
+
+    def tearDown(self):
+        self.ai_reader.read_reply = self._real
+        super().tearDown()
+
+    def test_unread_reply_on_a_partial_request_is_visible(self):
+        """Απάντηση που το AI δεν μπόρεσε να διαβάσει φαίνεται στην ουρά, ακόμη κι αν το αίτημα είναι μερικό"""
+        self.cfg.gemini_key = ""
+        self.reply(self.rid, "[aaaaaaaa] offer: 5")
+        self.cfg.gemini_key = "test"
+        self.reply(self.rid, "Το άλλο ήταν δεκαεπτά.", at=day(4))
+        self.assertEqual(self.status(self.rid), "partial")
+        (item,) = review.queue(self.con)["requests"]
+        self.assertIn("θα ξαναδοκιμαστεί", item["reason"])
+        self.assertEqual(self.followups(day(30))["sent"], [])
+
+    def test_gives_up_after_a_few_tries(self):
+        """Μετά από πέντε αποτυχημένες προσπάθειες το AI σταματά να δοκιμάζει και η απάντηση μένει για έλεγχο"""
+        self.reply(self.rid, "Ελεύθερο κείμενο χωρίς κωδικούς.")
+        for _ in range(8):
+            replies.process(self.con, mail._iso(day(5)), self.cfg)
+        row = self.con.execute("SELECT ai_tries, processed_at, needs_review, parse_note FROM messages WHERE direction='in'").fetchone()
+        self.assertEqual((row["ai_tries"], row["needs_review"]), (5, 1))
+        self.assertIsNotNone(row["processed_at"])
+        self.assertIn("5 φορές", row["parse_note"])
+        self.assertEqual([t["id"] for t in review.queue(self.con)["requests"]], [self.rid])
 
 
 class SchedulerRobustnessTests(AgentTestCase):
@@ -238,6 +341,27 @@ class SchedulerRobustnessTests(AgentTestCase):
         self.assertEqual((self.fetches, self.smtp.sent), (1, []))
         automation.tick(self.con, self.cfg, athens(2026, 11, 30, 10, 0))
         self.assertEqual((self.fetches, len(self.smtp.sent)), (2, 1))
+
+    def test_log_is_not_flooded(self):
+        """Δύο προβλήματα που διαρκούν ώρες γράφονται μία φορά το καθένα, όχι κάθε λεπτό"""
+        self.add_merchant("Avis", "avis@partners.test", [OFFER_A])
+        prepare_requests.plan(self.con, PERIOD, "ΔΕΗ myRewards Coupons")       # unsent drafts of a closed month
+        for minute in range(0, 50):                                           # ...and the new month has no file
+            automation.tick(self.con, self.cfg, athens(2026, 12, 1, 9, minute))
+        self.assertEqual(len(self.log("cycle")), 2)
+
+    def test_failing_job_waits_before_trying_again(self):
+        """Εργασία που απέτυχε ξαναδοκιμάζει μετά το διάστημα ελέγχου, όχι κάθε λεπτό"""
+        calls = []
+
+        def broken(con, cfg, now):
+            calls.append(now)
+            raise OSError("δεν υπάρχει σύνδεση")
+
+        mail.fetch_replies = broken
+        for minute in (0, 1, 2, 29, 31):
+            automation.tick(self.con, self.cfg, athens(2026, 11, 30, 8, minute))
+        self.assertEqual(len(calls), 2)
 
     def test_broken_file_does_not_stop_everything(self):
         """Χαλασμένο αρχείο στον φάκελο input καταγράφεται και οι υπόλοιπες εργασίες συνεχίζουν"""

@@ -41,7 +41,7 @@ def _messages(con, request_id):
         out.append({
             "id": m["id"], "direction": m["direction"], "kind": m["kind"], "at": m["at"],
             "from": m["from_addr"], "to": m["to_addrs"], "subject": m["subject"], "body": m["body"] or "",
-            "attachments": [a.replace("\\", "/").rsplit("/", 1)[-1] for a in json.loads(m["attachments"] or "[]")],
+            "attachments": [a.rsplit("/", 1)[-1] for a in json.loads(m["attachments"] or "[]")],
             "note": m["parse_note"], "needs_review": bool(m["needs_review"]),
         })  # fmt: skip
     return out
@@ -101,7 +101,7 @@ def queue(con) -> dict:
         {"id": r["id"], "label": f"{r['name']} – {r['period']}"}
         for r in con.execute(
             """SELECT r.id, r.period, m.name FROM requests r JOIN merchants m ON m.id = r.merchant_id
-                WHERE r.status NOT IN ('draft', 'completed') ORDER BY lower(m.name), r.period"""
+                WHERE r.status NOT IN ('draft', 'completed', 'undelivered') ORDER BY lower(m.name), r.period"""
         )
     ]
     return {
@@ -111,6 +111,18 @@ def queue(con) -> dict:
         "contact_problems": contact_problems(con),
         "no_email": partners_without_email(con),
     }
+
+
+def _send_one(con, cfg, msg) -> dict:
+    """Send a single email, under the same one-sender-at-a-time lock as the
+    bulk sends. Returns the addresses the server turned down, if only some."""
+    with mail.sending(con) as still_mine:
+        still_mine()
+        smtp = mail._smtp(cfg)
+        try:
+            return smtp.send_message(msg) or {}
+        finally:
+            smtp.quit()
 
 
 def contact_problems(con) -> list:
@@ -165,11 +177,7 @@ def resend(con, cfg, request_id: int, emails, now) -> dict:
     if bad:
         raise ReviewError(f"Δοκιμαστική λειτουργία: δεν επιτρέπεται αποστολή σε {', '.join(bad)}")
     msg = mail._build(cfg.mail_from, clean, r["subject"], r["body"])
-    smtp = mail._smtp(cfg)
-    try:
-        smtp.send_message(msg)
-    finally:
-        smtp.quit()
+    refused = _send_one(con, cfg, msg)
     with con:
         con.execute("DELETE FROM merchant_contacts WHERE merchant_id=?", (r["merchant_id"],))
         con.executemany(
@@ -177,6 +185,7 @@ def resend(con, cfg, request_id: int, emails, now) -> dict:
             [(r["merchant_id"], e) for e in clean],
         )
         mail._record(con, request_id, "out", "resend", msg, r["body"], now)
+        mail._note_refused(con, request_id, refused, now)
         con.execute(
             "UPDATE requests SET status='sent', sent_at=?, followups_sent=0 WHERE id=?",
             (mail._iso(now), request_id),
@@ -243,6 +252,8 @@ def set_values(con, request_id: int, values: dict, now_iso: str, who: str = "χ�
     """Record numbers a person entered. values: offer uuid -> non-negative int.
     Offers left out are not touched, so a missing answer never becomes a zero."""
     r = _request(con, request_id)
+    if not isinstance(values, dict):
+        raise ReviewError("Δεν δόθηκε καμία τιμή")
     allowed = {o["uuid"]: o for o in _offers(con, request_id, r["period"])}
     clean = {}
     for uuid, value in values.items():
@@ -293,7 +304,7 @@ def send_clarification(con, cfg, request_id: int, text: str, now) -> dict:
     r = _request(con, request_id)
     if r["status"] in ("draft", "completed", "undelivered"):
         raise ReviewError("Το αίτημα δεν περιμένει διευκρίνιση")
-    if not (text or "").strip():
+    if not isinstance(text, str) or not text.strip():
         raise ReviewError("Το κείμενο είναι κενό")
     to = mail._contacts(con, r["merchant_id"])
     if not to:
@@ -307,13 +318,10 @@ def send_clarification(con, cfg, request_id: int, text: str, now) -> dict:
         (request_id,),
     ).fetchone()
     msg = mail._build(cfg.mail_from, to, "Re: " + r["subject"], text.strip(), first["message_id"] if first else None)
-    smtp = mail._smtp(cfg)
-    try:
-        smtp.send_message(msg)
-    finally:
-        smtp.quit()
+    refused = _send_one(con, cfg, msg)
     with con:
         mail._record(con, request_id, "out", "clarification", msg, text.strip(), now)
+        mail._note_refused(con, request_id, refused, now)
         _seen(con, request_id)
         # Waiting again: for everything ('sent') or for what is still missing ('partial').
         status = _refresh_status(con, request_id, r["period"], "sent")

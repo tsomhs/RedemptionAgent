@@ -235,7 +235,8 @@ function renderOverview(s) {
       el("td", { class: "num" }, m.open ? el("span", { class: "st pend" }, num(m.open)) : "0"),
       el("td", {}, el("a", { class: "link", onclick: () => showMonth(m.period) }, "προσφορές")));
   });
-  const sum = (k) => s.monthly.reduce((t, m) => t + m[k], 0);
+  // null when no month has a value: an empty total, not a zero
+  const sum = (k) => { const v = s.monthly.map((m) => m[k]).filter((x) => x != null); return v.length ? v.reduce((t, x) => t + x, 0) : null; };
   const trend = el("div", { class: "card", style: "margin-bottom:12px" }, el("h2", {}, "Εξαργυρώσεις ανά μήνα"),
     el("div", { class: "cap" }, "Καταχωρημένες εξαργυρώσεις κάθε μήνα και πόσες προσφορές έχουν απάντηση. Όσο ένας μήνας έχει ανοικτές εκκρεμότητες, το σύνολό του είναι ελλιπές."),
     s.monthly.length ? el("div", { class: "tablewrap flat" }, el("table", {},

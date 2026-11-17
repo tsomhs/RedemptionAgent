@@ -43,13 +43,13 @@ def set_state(con, key, value):
 
 
 def log(con, now, job, message, level="info", once=False):
-    """once: skip when the last entry of this job says the same thing today,
-    so a condition that lasts for hours is reported one time."""
+    """once: skip when this job already said the same thing today, so a
+    condition that lasts for hours is reported one time."""
     at = mail._iso(now)
-    if once:
-        last = con.execute("SELECT at, message FROM runs WHERE job=? ORDER BY id DESC LIMIT 1", (job,)).fetchone()
-        if last and last["message"] == message and last["at"][:10] == at[:10]:
-            return
+    if once and con.execute(
+        "SELECT 1 FROM runs WHERE job=? AND message=? AND substr(at, 1, 10)=? LIMIT 1", (job, message, at[:10])
+    ).fetchone():
+        return
     with con:
         con.execute("INSERT INTO runs (at, job, level, message) VALUES (?, ?, ?, ?)", (at, job, level, message))
 
@@ -107,6 +107,8 @@ def _send(con, cfg, period, now) -> str:
         parts.append(f"{len(r['refused'])} ανεπίδοτα")
     if r["no_contact"]:
         parts.append(f"{len(r['no_contact'])} χωρίς email")
+    if r["failed"]:
+        parts.append(f"{len(r['failed'])} απορρίφθηκαν από τον mail server ({'; '.join(f'{k}: {v}' for k, v in r['failed'].items())})")
     return ", ".join(parts)
 
 
@@ -193,9 +195,6 @@ def _followups(con, cfg, s, now, local):
         return
     if (local.hour, local.minute) < _hm(s["reminder_time"]):
         return
-    retry = get_state(con, "followups.retry")
-    if retry and now - mail._parse(retry) < timedelta(minutes=s["poll_minutes"]):
-        return
     # Read the mailbox first. A partner who answered an hour ago must not get
     # a reminder; if the mailbox cannot be read, no reminder goes out at all.
     read = get_state(con, "fetch.ok")
@@ -210,6 +209,8 @@ def _followups(con, cfg, s, now, local):
         if r["blocked"]:
             text += f". {len(r['blocked'])} δεν στάλθηκαν (χωρίς επιτρεπτή διεύθυνση)"
         log(con, now, "followups", text)
+    if r["failed"]:
+        log(con, now, "followups", "Ο mail server απέρριψε υπενθυμίσεις: " + "; ".join(f"{k}: {v}" for k, v in r["failed"].items()), "error", once=True)
 
 
 def tick(con, cfg: Config, now=None) -> dict:
@@ -225,16 +226,18 @@ def tick(con, cfg: Config, now=None) -> dict:
         ("fetch", lambda: _fetch(con, cfg, s, now)),
         ("followups", lambda: _followups(con, cfg, s, now, local)),
     ):
+        # A job that just failed waits one mailbox interval before its next try,
+        # instead of hitting a mail server that is down once a minute.
+        failed = get_state(con, f"{job}.retry")
+        if failed and timedelta(0) <= now - mail._parse(failed) < timedelta(minutes=s["poll_minutes"]):
+            continue
         try:
             fn()
         except Exception as e:
             # One failing job (mail server down, bad file, anything unexpected)
-            # must not stop the others. It is tried again after the usual interval.
+            # must not stop the others.
             log(con, now, job, f"Αποτυχία: {e}", "error", once=True)
-            if job == "fetch":
-                set_state(con, "fetch.last", mail._iso(now))
-            if job == "followups":
-                set_state(con, "followups.retry", mail._iso(now))
+            set_state(con, f"{job}.retry", mail._iso(now))
     return s
 
 
