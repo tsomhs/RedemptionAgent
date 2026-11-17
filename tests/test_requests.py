@@ -80,9 +80,9 @@ class PlanAndSendTests(AgentTestCase):
         drafts = {d["merchant"]: d for d in self.plan()["drafts"]}
         self.assertEqual(sorted(drafts), ["Kotsovolos", "efood"])
         self.assertEqual(drafts["Kotsovolos"]["offers"], 2)
-        self.assertIn("[aaaaaaaa]", drafts["Kotsovolos"]["body"])
-        self.assertIn("[bbbbbbbb]", drafts["Kotsovolos"]["body"])
-        self.assertNotIn("[cccccccc]", drafts["Kotsovolos"]["body"])
+        self.assertIn("offer aaaaaaaa", drafts["Kotsovolos"]["body"])
+        self.assertIn("offer bbbbbbbb", drafts["Kotsovolos"]["body"])
+        self.assertNotIn("offer cccccccc", drafts["Kotsovolos"]["body"])
         self.assertIn("Οκτώβριο 2026", drafts["Kotsovolos"]["subject"])
 
     def test_plan_twice(self):
@@ -130,3 +130,21 @@ class PlanAndSendTests(AgentTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EmailTextTests(AgentTestCase):
+    def test_request_is_the_teams_text_plus_the_offers(self):
+        """Το email είναι το κείμενο της ομάδας και από κάτω οι προσφορές με το όνομά τους, χωρίς κωδικούς"""
+        self.add_merchant("Beta Sport", "info@partners.test", [OFFER_A, OFFER_B])
+        (draft,) = prepare_requests.plan(self.con, PERIOD, PROGRAM)["drafts"]
+        self.assertEqual(draft["body"], (
+            "Καλημέρα σας,\n"
+            "Στα πλαίσια της συνεργασίας που διατηρούμε στο ΔΕΗ myRewards Coupons, θα θέλαμε να μας στείλετε "
+            "τη λίστα με τα κουπόνια που έχουν εξαργυρωθεί στην βάση σας τον μήνα Οκτώβριο 2026 για την "
+            "καταγραφή τους και στη δική μας βάση.\n\n"
+            "Το αίτημα αφορά τις παρακάτω προσφορές:\n"
+            "- offer aaaaaaaa\n"
+            "- offer bbbbbbbb\n\n"
+            "Ευχαριστούμε εκ των προτέρων."
+        ))  # fmt: skip
+        self.assertNotIn("[", draft["body"])

@@ -271,7 +271,7 @@ function renderDetail(rows, s) {
   const shown = rows.slice(0, 1000);
   const body = shown.map((r) => el("tr", {},
     el("td", {}, monthLabel[r.period] || r.period), el("td", {}, r.program), el("td", {}, r.merchant || "—"),
-    // The first 8 characters are the code partners see in the emails; the full UUID is in the tooltip and in the Excel file.
+    // The first 8 characters of the UUID; the whole of it is in the tooltip and in the Excel file.
     el("td", { class: "code", title: "UUID: " + r.uuid }, r.uuid.startsWith("report-") ? "—" : r.uuid.slice(0, 8)), el("td", { class: "offer" }, r.offer), el("td", {}, r.category || "—"),
     el("td", { class: "num" }, num(r.assigned)), el("td", { class: "num" }, num(r.redeemed)), el("td", { class: "num" }, pct(r.rate)),
     el("td", {}, el("span", { class: "st " + (ST_CLASS[r.status] || "") }, r.status)),

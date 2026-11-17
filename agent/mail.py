@@ -16,7 +16,6 @@ from email.utils import getaddresses, make_msgid, parseaddr
 from pathlib import Path
 
 from .config import ROOT, Config
-from .replies import offer_code
 
 FOLLOWUP_TEXT = (
     "Καλημέρα σας,\n\n"
@@ -346,7 +345,7 @@ def _send_followups(con, cfg: Config, now, label_for, still_mine) -> dict:
                 missing = _missing_offers(con, r["id"], r["period"])
                 if not missing:
                     continue
-                lines = "\n".join(f"[{offer_code(o['uuid'])}] {o['admin_name']}" for o in missing)
+                lines = "\n".join(f"- {o['admin_name']}" for o in missing)
                 body = PARTIAL_FOLLOWUP_TEXT.format(label=label_for(r["period"]), lines=lines)
             else:
                 body = FOLLOWUP_TEXT.format(label=label_for(r["period"]))

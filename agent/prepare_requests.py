@@ -3,7 +3,6 @@
 import re
 from pathlib import Path
 
-from .replies import offer_code
 
 MONTHS_ACC = [
     "Ιανουάριο", "Φεβρουάριο", "Μάρτιο", "Απρίλιο", "Μάιο", "Ιούνιο",
@@ -16,19 +15,21 @@ def period_label(period: str) -> str:
     return f"{MONTHS_ACC[int(month) - 1]} {year}"
 
 
+def offer_lines(offers) -> str:
+    """The offers of an email, one per line, by the name the partner knows."""
+    return "\n".join(f"- {o['admin_name']}" for o in offers)
+
+
 def compose(program: str, period: str, offers) -> tuple[str, str]:
+    """The team's text, followed by the offers the request is about."""
     label = period_label(period)
     subject = f"{program} – Εξαργυρώσεις κουπονιών, {label}"
-    lines = "\n".join(f"[{offer_code(o['uuid'])}] {o['admin_name']}" for o in offers)
     body = (
-        "Καλημέρα σας,\n\n"
+        "Καλημέρα σας,\n"
         f"Στα πλαίσια της συνεργασίας που διατηρούμε στο {program}, θα θέλαμε να μας "
         "στείλετε τη λίστα με τα κουπόνια που έχουν εξαργυρωθεί στην βάση σας τον μήνα "
         f"{label} για την καταγραφή τους και στη δική μας βάση.\n\n"
-        "Για να καταχωρηθούν αυτόματα τα στοιχεία, παρακαλούμε απαντήστε με μία γραμμή "
-        "ανά προσφορά, κρατώντας τον κωδικό της και προσθέτοντας στο τέλος τον αριθμό "
-        "εξαργυρώσεων, π.χ. «[a1b2c3d4] όνομα προσφοράς: 12».\n\n"
-        f"Το αίτημα αφορά τις παρακάτω προσφορές:\n{lines}\n\n"
+        f"Το αίτημα αφορά τις παρακάτω προσφορές:\n{offer_lines(offers)}\n\n"
         "Ευχαριστούμε εκ των προτέρων."
     )
     return subject, body

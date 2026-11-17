@@ -197,8 +197,8 @@ class MatchingTests(AgentTestCase):
         drafts = {d["merchant"]: d for d in prepare_requests.plan(self.con, PERIOD, PROGRAM)["drafts"]}
         self.assertEqual(list(drafts), ["Kotsovolos"])
         self.assertEqual(drafts["Kotsovolos"]["offers"], 1)
-        self.assertIn("[bbbbbbbb]", drafts["Kotsovolos"]["body"])
-        self.assertNotIn("[aaaaaaaa]", drafts["Kotsovolos"]["body"])
+        self.assertIn("offer bbbbbbbb", drafts["Kotsovolos"]["body"])
+        self.assertNotIn("offer aaaaaaaa", drafts["Kotsovolos"]["body"])
 
 
 class CorrectionTests(AgentTestCase):

@@ -137,10 +137,10 @@ def build(con, cfg, now=None) -> str:
 
     def lines(partner, values):
         return "\n".join(
-            f"[{replies.offer_code(oid)}] {name}: {v}" for (oid, name), v in zip(offers[partner], values) if v is not None
+            f"{name}: {v}" for (oid, name), v in zip(offers[partner], values) if v is not None
         )
 
-    # Answered in full, in the agreed format.
+    # Answered in full, a number next to each offer.
     r, first = send("Demo Coffee")
     incoming(r["email"], "Re: " + r["subject"], "Καλησπέρα σας,\n\n" + lines("Demo Coffee", (148, 37)) + "\n\nΜε εκτίμηση", first, 7)
 
@@ -154,8 +154,8 @@ def build(con, cfg, now=None) -> str:
 
     # Two different numbers for the same offer.
     r, first = send("Gamma Home")
-    code, name = replies.offer_code(offers["Gamma Home"][0][0]), offers["Gamma Home"][0][1]
-    incoming(r["email"], "Re: " + r["subject"], f"[{code}] {name}: 12\n[{code}] {name}: 21\n" + lines("Gamma Home", (None, 9)), first, 4)
+    name = offers["Gamma Home"][0][1]
+    incoming(r["email"], "Re: " + r["subject"], f"{name}: 12\n{name}: 21\n" + lines("Gamma Home", (None, 9)), first, 4)
 
     # No answer yet: an out-of-office note, then a reminder.
     r, first = send("Delta Tech")

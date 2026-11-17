@@ -65,8 +65,8 @@ class UnclearReplyTests(AgentTestCase):
         self.assertEqual(self.status(self.rid), "partial")
         self.followups(day(13))
         text = self.smtp.sent[-1].get_content()
-        self.assertIn("[bbbbbbbb]", text)
-        self.assertNotIn("[aaaaaaaa]", text)
+        self.assertIn("offer bbbbbbbb", text)
+        self.assertNotIn("offer aaaaaaaa", text)
 
     def test_full_stop_after_the_number(self):
         """Τελεία μετά τον αριθμό δεν χαλάει τη συμφωνημένη μορφή· το 1.200 δεν διαβάζεται ως 200"""

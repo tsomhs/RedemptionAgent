@@ -55,8 +55,8 @@ class FollowupTests(AgentTestCase):
         self.assertEqual(self.followups(day(7))["sent"], [], "όχι την επομένη της απάντησης")
         self.assertEqual(self.followups(day(10))["sent"], [("Kotsovolos", 1)])
         text = self.smtp.sent[0].get_content()
-        self.assertIn("[bbbbbbbb]", text)
-        self.assertNotIn("[aaaaaaaa]", text)
+        self.assertIn("offer bbbbbbbb", text)
+        self.assertNotIn("offer aaaaaaaa", text)
         self.assertIn("μας λείπουν ακόμη", text)
         # Once the rest arrives the request is complete and nothing more is sent.
         self.reply(self.rid, "[bbbbbbbb] offer: 2", at=day(11))

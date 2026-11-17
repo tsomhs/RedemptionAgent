@@ -1,13 +1,15 @@
-"""Read structured replies and write the redemptions. No AI: plain matching.
+"""Read replies that state a number per offer, and write the redemptions.
+No AI: plain matching.
 
-Every offer in a request carries a code (the first 8 characters of its UUID),
-shown as '[445eeacb] offer name'. A reply reports a number by repeating the
-code on a line that ends with ': <number>' or '= <number>':
+A line counts when it names one offer of the request and ends with a number:
 
-    [445eeacb] Student_24home.gr_10€_31-10-2026: 12
-    [9a72b5db] = 0
+    generic_Beta Sport_15€ έκπτωση_31-12-2027: 12
+    - student_Beta Sport_25% έκπτωση_31-12-2027 = 0
 
-Anything that does not follow the format is left for a human; the program never
+The offer is named as in our email. Its short code (the first 8 characters of
+its UUID, in square brackets) is accepted as well: '[f4c0107a] ...: 12'.
+
+Anything else is left for the AI reader or for a person; the program never
 guesses a number and never splits a total across offers.
 """
 
@@ -16,6 +18,10 @@ import re
 
 CODE_LEN = 8
 AI_TRIES = 5  # after this many failed readings a reply is left to a person
+# After the offer name: a colon or equals sign, or a space (with or without a
+# dash), then the number and nothing else. A dash glued to the name is not a
+# separator: names end in dates such as 31-12-2027.
+_NAME_TAIL = re.compile(r"^(?:\s*[:=]\s*|\s+[-–—]\s*|\s+)(\d+)\s*\.?\s*$")
 _LINE = re.compile(r"\[([0-9a-fA-F]{8})\][^\n]*?[:=]\s*(\d+)\s*\.?\s*$")
 
 
@@ -23,9 +29,35 @@ def offer_code(uuid: str) -> str:
     return uuid[:CODE_LEN].lower()
 
 
-def parse(body: str):
+def _norm(text: str) -> str:
+    return " ".join(text.split()).lower()
+
+
+def names_of(offers: dict) -> dict:
+    """offer name (normalised) -> code, for the offers of one request. A name
+    carried by two offers is left out: it would not say which one is meant."""
+    seen = {}
+    for code, items in offers.items():
+        if len(items) == 1:
+            seen.setdefault(_norm(items[0]["admin_name"]), []).append(code)
+    return {name: codes[0] for name, codes in seen.items() if len(codes) == 1}
+
+
+def _by_name(line: str, names: dict):
+    """(code, number) when the line is '<offer name> <separator> <number>'."""
+    text = _norm(line.lstrip("-•*·– ").strip())
+    for name, code in sorted(names.items(), key=lambda kv: -len(kv[0])):  # the most specific name first
+        if text.startswith(name):
+            m = _NAME_TAIL.match(text[len(name):])
+            if m:
+                return code, int(m.group(1))
+    return None, None
+
+
+def parse(body: str, names: dict | None = None):
     """Return (values, conflicts): code -> number, and the codes that were given
-    two different numbers. Lines typed by the sender win over quoted ones
+    two different numbers. names (from names_of) lets a line name its offer
+    instead of quoting a code. Lines typed by the sender win over quoted ones
     ('> ...'), so a correction on top of an older quoted reply is read right,
     while numbers filled in directly inside the quoted request still count."""
     typed, quoted = {}, {}
@@ -37,6 +69,10 @@ def parse(body: str):
         m = _LINE.search(line)
         if m:
             bucket.setdefault(m.group(1).lower(), set()).add(int(m.group(2)))
+        elif names:
+            code, value = _by_name(line, names)
+            if code:
+                bucket.setdefault(code, set()).add(value)
     values, conflicts = {}, set()
     for code in set(typed) | set(quoted):
         found = typed.get(code) or quoted[code]
@@ -77,7 +113,7 @@ def process(con, now_iso: str, cfg=None) -> list:
     """Apply every reply not processed yet. Each message is handled once, so
     running this again cannot count the same email twice.
 
-    Replies in the agreed format are matched directly. Anything else goes to
+    Replies that put a number next to each offer are matched directly. Anything else goes to
     the AI reader when an API key is configured; without one it is left for a
     human, exactly as before."""
     results = []
@@ -98,7 +134,7 @@ def process(con, now_iso: str, cfg=None) -> list:
             (msg["request_id"],),
         ):
             offers.setdefault(offer_code(o["uuid"]), []).append(o)
-        values, conflicts = parse(msg["body"])
+        values, conflicts = parse(msg["body"], names_of(offers))
         res = {"merchant": msg["name"], "written": [], "unchanged": 0, "unknown": [], "conflicts": []}
         ai_note = reply_type = None
         from_ai, is_correction = False, True
@@ -201,7 +237,7 @@ def process(con, now_iso: str, cfg=None) -> list:
                 for name, old, new in res.get("ambiguous", []):
                     note += f" Δεν είναι σαφές αν διορθώνει ή προσθέτει: {name}, καταχωρημένο {old}, νέο {new}."
             elif not values and not conflicts:
-                note = "καμία γραμμή στη συμφωνημένη μορφή· θέλει έλεγχο"
+                note = "δεν βρέθηκε αριθμός δίπλα σε όνομα προσφοράς· θέλει έλεγχο"
             else:
                 note = (f"{len(res['written'])} καταχωρήσεις, {res['unchanged']} ίδιες, "
                         f"{len(res['unknown'])} άγνωστοι κωδικοί, {len(res['conflicts'])} αντιφάσεις")

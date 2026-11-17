@@ -124,8 +124,8 @@ class ReviewTests(AgentTestCase):
     def test_clarification(self):
         """Η διευκρίνιση φεύγει στο ίδιο νήμα, ζητά τις προσφορές που λείπουν και το αίτημα ξαναπεριμένει"""
         text = review.clarification_text(self.con, self.rid, prepare_requests.period_label)
-        self.assertIn("[aaaaaaaa]", text)
-        self.assertIn("[bbbbbbbb]", text)
+        self.assertIn("offer aaaaaaaa", text)
+        self.assertIn("offer bbbbbbbb", text)
         review.send_clarification(self.con, self.cfg, self.rid, text, day(4))
         msg = self.smtp.sent[0]
         self.assertEqual(msg["In-Reply-To"], f"<initial-{self.rid}@warply.test>")

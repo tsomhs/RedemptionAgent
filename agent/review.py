@@ -293,7 +293,7 @@ def set_values(con, request_id: int, values: dict, now_iso: str, who: str = "Ï‡Î
 def clarification_text(con, request_id: int, label_for) -> str:
     r = _request(con, request_id)
     missing = [o for o in _offers(con, request_id, r["period"]) if o["redeemed"] is None or o["status"] == "needs_review"]
-    lines = "\n".join(f"[{replies.offer_code(o['uuid'])}] {o['admin_name']}" for o in missing)
+    lines = "\n".join(f"- {o['admin_name']}" for o in missing)
     return CLARIFY_TEXT.format(label=label_for(r["period"]), lines=lines)
 
 

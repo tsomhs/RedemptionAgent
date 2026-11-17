@@ -97,3 +97,45 @@ class ProcessTests(AgentTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ByNameTests(AgentTestCase):
+    """Το email μας γράφει τις προσφορές με το όνομά τους, οπότε έτσι απαντούν και οι συνεργάτες."""
+
+    def setUp(self):
+        super().setUp()
+        self.rid = self.sent_request("Kotsovolos", "kotsovolos@partners.test")
+        with self.con:
+            self.con.execute("UPDATE offers SET admin_name='generic_Beta Sport_15€ έκπτωση_31-12-2027' WHERE uuid=?", (OFFER_A,))
+            self.con.execute("UPDATE offers SET admin_name='student_Beta Sport_25% έκπτωση_31-12-2027' WHERE uuid=?", (OFFER_B,))
+
+    def test_number_next_to_the_offer_name(self):
+        """Αριθμός δίπλα στο όνομα της προσφοράς καταχωρείται χωρίς AI, με όποιο διαχωριστικό"""
+        self.reply(self.rid, "Καλησπέρα,\n\n- generic_Beta Sport_15€ έκπτωση_31-12-2027: 12\n"
+                             "student_beta sport_25% έκπτωση_31-12-2027 - 0.\n\nΜε εκτίμηση")  # fmt: skip
+        self.assertEqual(self.redeemed(OFFER_A), (12, "reported"))
+        self.assertEqual(self.redeemed(OFFER_B), (0, "reported"))
+        self.assertEqual(self.status(self.rid), "completed")
+
+    def test_filled_in_inside_the_quoted_request(self):
+        """Αριθμοί γραμμένοι μέσα στο παρατιθέμενο δικό μας email μετράνε κι αυτοί"""
+        self.reply(self.rid, "> Το αίτημα αφορά τις παρακάτω προσφορές:\n"
+                             "> - generic_Beta Sport_15€ έκπτωση_31-12-2027 = 7\n"
+                             "> - student_Beta Sport_25% έκπτωση_31-12-2027")  # fmt: skip
+        self.assertEqual(self.redeemed(OFFER_A), (7, "reported"))
+        self.assertEqual(self.redeemed(OFFER_B), (None, "pending"))
+
+    def test_name_alone_or_unclear_number_is_not_a_value(self):
+        """Το όνομα χωρίς αριθμό, ή με αριθμό που δεν είναι καθαρός, δεν καταχωρείται"""
+        res = self.reply(self.rid, "generic_Beta Sport_15€ έκπτωση_31-12-2027\n"
+                                   "student_Beta Sport_25% έκπτωση_31-12-2027: περίπου 5\n"
+                                   "generic_Beta Sport_15€ έκπτωση_31-12-2027: 1.200")  # fmt: skip
+        self.assertEqual(self.redeemed(OFFER_A), (None, "pending"))
+        self.assertEqual(self.redeemed(OFFER_B), (None, "pending"))
+        self.assertIn("θέλει έλεγχο", res[0]["note"])
+
+    def test_the_date_in_the_name_is_not_the_number(self):
+        """Η ημερομηνία στο τέλος του ονόματος δεν διαβάζεται ως αριθμός εξαργυρώσεων"""
+        values, _ = replies.parse("generic_Beta Sport_15€ έκπτωση_31-12-2027",
+                                  {"generic_beta sport_15€ έκπτωση_31-12": "aaaaaaaa"})  # fmt: skip
+        self.assertEqual(values, {})

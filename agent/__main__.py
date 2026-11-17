@@ -144,7 +144,7 @@ def cmd_redemptions(con, cfg, a):
 
 
 def _report_reply_text(con, a):
-    """Reply in the agreed format, with the numbers the team recorded in the
+    """Reply with a number next to each offer name: the numbers the team recorded in the
     existing report. Offers the report has no number for are left out."""
     values = old_report.redeemed_by_offer(a.from_report, a.month)
     offers = con.execute(
@@ -156,7 +156,7 @@ def _report_reply_text(con, a):
         (a.month, f"%{a.merchant.lower()}%"),
     ).fetchall()
     lines = [
-        f"[{replies.offer_code(o['uuid'])}] {o['admin_name']}: {old_report.lookup(values, o['admin_name'])}"
+        f"{o['admin_name']}: {old_report.lookup(values, o['admin_name'])}"
         for o in offers
         if old_report.lookup(values, o["admin_name"]) is not None
     ]
@@ -338,7 +338,7 @@ def main(argv=None):
     s.add_argument("--month", required=True)
     s.add_argument("--text")
     s.add_argument("--from-report", type=Path, metavar="XLSX",
-                   help="απάντηση στη συμφωνημένη μορφή με τα νούμερα του υπάρχοντος report")
+                   help="απάντηση με τα νούμερα του παλιού report δίπλα σε κάθε προσφορά")
     s.add_argument("--attach", type=Path)
     s.add_argument("--auto", action="store_true", help="σήμανση ως αυτόματη απάντηση")
 
