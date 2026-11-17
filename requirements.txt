@@ -1,0 +1,7 @@
+openpyxl>=3.1
+# Windows has no built-in time zone database; the monthly cycle follows Europe/Athens.
+tzdata; sys_platform == "win32"
+
+# Reading free-text replies with AI. Only the provider whose key is in .env is used.
+anthropic>=2.8
+google-genai>=3.3

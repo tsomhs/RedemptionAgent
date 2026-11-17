@@ -1,0 +1,22 @@
+# Settings with passwords and API keys. Only .env.example is tracked.
+.env
+.env.*
+!.env.example
+
+# Databases, received attachments, email previews.
+data/
+
+# Spreadsheets to import: partner contacts and the client's figures.
+input/
+*.xlsx
+
+# Python
+.venv*/
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+
+# Node (a frontend, when one is added)
+node_modules/

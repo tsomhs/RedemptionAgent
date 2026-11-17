@@ -1,0 +1,521 @@
+<!doctype html>
+<html lang="el">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Εξαργυρώσεις κουπονιών</title>
+<style>
+:root {
+  --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink2: #52514e; --muted: #898781;
+  --line: #e1e0d9; --axis: #c3c2b7; --series: #2a78d6; --series-soft: #cde2fb;
+  --good: #006300; --warn-bg: #fff4d6; --warn-ink: #6b4a00; --crit: #d03b3b; --focus: #2a78d6;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink2: #c3c2b7; --muted: #898781;
+    --line: #2c2c2a; --axis: #383835; --series: #3987e5; --series-soft: #184f95;
+    --good: #0ca30c; --warn-bg: #3a2e0a; --warn-ink: #f3d58a; --crit: #e66767; --focus: #3987e5;
+  }
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.45 system-ui, "Segoe UI", sans-serif; }
+header { padding: 16px 24px 0; }
+h1 { font-size: 20px; margin: 0 0 2px; }
+.sub { color: var(--ink2); font-size: 13px; }
+.badge { display: inline-block; padding: 1px 8px; border-radius: 10px; background: var(--warn-bg); color: var(--warn-ink); font-size: 12px; margin-left: 8px; }
+nav { display: flex; gap: 4px; padding: 14px 24px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+nav button { border: 0; background: none; color: var(--ink2); font: inherit; padding: 8px 14px; cursor: pointer; border-bottom: 2px solid transparent; }
+nav button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--series); font-weight: 600; }
+nav .count { background: var(--crit); color: #fff; border-radius: 9px; padding: 0 6px; font-size: 12px; margin-left: 6px; }
+main { padding: 16px 24px 40px; }
+#overview, #review { max-width: 1400px; }
+#detail td.offer { overflow-wrap: anywhere; min-width: 220px; }
+#detail td:nth-child(2) { white-space: nowrap; }
+#detail td.num, #detail td .st { white-space: nowrap; }
+td.code { font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: var(--ink2); white-space: nowrap; }
+.filters { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; margin-bottom: 16px; }
+.filters label { display: flex; flex-direction: column; font-size: 12px; color: var(--ink2); gap: 3px; }
+select, input, textarea, button.btn { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--axis); border-radius: 6px; padding: 6px 8px; }
+button.btn { cursor: pointer; }
+button.btn.primary { background: var(--series); border-color: var(--series); color: #fff; }
+button.btn:disabled { opacity: .5; cursor: default; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.tile, .card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+.tile .k { color: var(--ink2); font-size: 12px; }
+.tile .v { font-size: 26px; font-weight: 650; margin: 2px 0; font-variant-numeric: tabular-nums; }
+.tile .n { color: var(--ink2); font-size: 12px; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 12px; }
+.card h2 { font-size: 14px; margin: 0 0 2px; }
+.card .cap { color: var(--ink2); font-size: 12px; margin-bottom: 12px; }
+.mbar { height: 12px; min-width: 120px; }
+.mbar .fill { height: 100%; background: var(--series); border-radius: 0 4px 4px 0; min-width: 1px; }
+td.barcell { width: 30%; vertical-align: middle; }
+td.strong { font-weight: 650; }
+tfoot td { font-weight: 600; border-top: 1px solid var(--axis); border-bottom: 0; }
+.tablewrap.flat { border: 0; border-radius: 0; max-height: none; }
+.tablewrap.flat table { background: none; }
+.tablewrap.flat th { background: var(--surface); }
+.hbar { display: grid; grid-template-columns: minmax(90px, 34%) 1fr auto; gap: 8px; align-items: center; padding: 3px 0; font-size: 13px; }
+.hbar .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink2); }
+.hbar .track { height: 14px; }
+.hbar .fill { height: 100%; background: var(--series); border-radius: 0 4px 4px 0; min-width: 1px; }
+.hbar .num { font-variant-numeric: tabular-nums; }
+#tip { position: fixed; pointer-events: none; background: var(--ink); color: var(--page); padding: 5px 8px; border-radius: 6px; font-size: 12px; display: none; z-index: 5; max-width: 320px; }
+table { border-collapse: collapse; width: 100%; background: var(--surface); }
+th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 12px; color: var(--ink2); font-weight: 600; position: sticky; top: 0; background: var(--surface); }
+td:first-child { white-space: nowrap; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.tablewrap { border: 1px solid var(--line); border-radius: 10px; overflow: auto; max-height: 70vh; }
+.st { white-space: nowrap; }
+.st::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--muted); }
+.st.ok::before { background: var(--good); } .st.rev::before { background: var(--crit); } .st.pend::before { background: #fab219; }
+.empty { color: var(--ink2); padding: 24px; text-align: center; }
+#settings { max-width: 1100px; }
+.sgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 12px; margin-bottom: 12px; }
+.field { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); }
+.field:first-of-type { border-top: 0; }
+.field .lab { font-weight: 550; }
+.field .help { grid-column: 1 / -1; color: var(--ink2); font-size: 12px; }
+.field input[type="number"] { width: 84px; text-align: right; }
+.field input[type="checkbox"] { width: 18px; height: 18px; }
+.field textarea { grid-column: 1 / -1; min-height: 70px; margin-top: 0; }
+.banner { border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; background: var(--warn-bg); color: var(--warn-ink); }
+.banner.ok { background: none; border: 1px solid var(--line); color: var(--ink); }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; font-size: 13px; }
+.kv dt { color: var(--ink2); } .kv dd { margin: 0; }
+.runs td { font-size: 13px; } .runs .error { color: var(--crit); }
+.savebar { position: sticky; bottom: 0; background: var(--page); padding: 10px 0; display: flex; gap: 10px; align-items: center; }
+.item { margin-bottom: 14px; }
+.item h3 { margin: 0; font-size: 15px; }
+.reason { background: var(--warn-bg); color: var(--warn-ink); border-radius: 6px; padding: 8px 10px; margin: 10px 0; font-size: 13px; }
+.msg { border-left: 3px solid var(--axis); padding: 4px 0 4px 10px; margin: 8px 0; }
+.msg.in { border-left-color: var(--series); }
+.msg .meta { color: var(--ink2); font-size: 12px; }
+.msg pre { margin: 4px 0 0; white-space: pre-wrap; word-break: break-word; font: inherit; }
+.offers { display: grid; grid-template-columns: 1fr auto auto; gap: 6px 12px; align-items: center; margin: 10px 0; }
+.offers .h { font-size: 12px; color: var(--ink2); }
+.offers input { width: 90px; text-align: right; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+.note { font-size: 13px; color: var(--ink2); }
+.err { color: var(--crit); }
+textarea { width: 100%; min-height: 170px; margin-top: 8px; }
+dialog { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); max-width: 760px; width: 92vw; max-height: 86vh; }
+dialog::backdrop { background: rgba(0, 0, 0, .45); }
+a.link { color: var(--series); cursor: pointer; text-decoration: underline; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Εξαργυρώσεις κουπονιών <span id="mode" class="badge" hidden></span></h1>
+  <div class="sub" id="dbinfo"></div>
+</header>
+<nav role="tablist">
+  <button role="tab" data-tab="overview" aria-selected="true">Επισκόπηση</button>
+  <button role="tab" data-tab="detail" aria-selected="false">Αναλυτικά</button>
+  <button role="tab" data-tab="review" aria-selected="false">Προς έλεγχο<span class="count" id="qcount" hidden></span></button>
+  <button role="tab" data-tab="requests" aria-selected="false">Αιτήματα</button>
+  <button role="tab" data-tab="settings" aria-selected="false">Ρυθμίσεις</button>
+</nav>
+<main>
+  <div class="filters" id="filters"></div>
+  <section id="overview"></section>
+  <section id="detail" hidden></section>
+  <section id="review" hidden></section>
+  <section id="requests" hidden></section>
+  <section id="settings" hidden></section>
+</main>
+<div id="tip" role="tooltip"></div>
+<dialog id="dlg"></dialog>
+
+<script>
+"use strict";
+// Text that comes from partners' emails is untrusted: everything is put on the
+// page through textContent (the el() helper), never as HTML.
+const $ = (id) => document.getElementById(id);
+function el(tag, props, ...kids) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(props || {})) {
+    if (k === "class") n.className = v;
+    else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
+    else if (v === true) n.setAttribute(k, "");
+    else if (v !== false && v != null) n.setAttribute(k, v);
+  }
+  put(n, kids);
+  return n;
+}
+// Replace a node's children. Arrays may be nested to any depth; null is skipped.
+function put(n, ...kids) {
+  n.replaceChildren(...kids.flat(Infinity).filter((k) => k != null && k !== false).map((k) => (k.nodeType ? k : document.createTextNode(String(k)))));
+}
+const nf = new Intl.NumberFormat("el-GR");
+const num = (v) => (v == null ? "—" : nf.format(v));
+const pct = (v) => (v == null ? "—" : new Intl.NumberFormat("el-GR", { style: "percent", maximumFractionDigits: 1 }).format(v));
+const dec = (v) => (v == null ? "—" : new Intl.NumberFormat("el-GR", { maximumFractionDigits: 1 }).format(v));
+const REQ_STATUS = { sent: "Αναμονή απάντησης", undelivered: "Ανεπίδοτο", replied: "Προς έλεγχο", partial: "Μερική απάντηση", completed: "Ολοκληρωμένο", draft: "Πρόχειρο" };
+const KIND = { initial: "Αρχικό αίτημα", resend: "Επαναποστολή αιτήματος", followup: "Υπενθύμιση", clarification: "Διευκρίνιση", reply: "Απάντηση", auto: "Αυτόματη απάντηση", bounce: "Αποτυχία παράδοσης", ignored: "Άσχετο email" };
+// Times are stored in UTC and shown in Greek time, which the monthly cycle follows.
+const athens = new Intl.DateTimeFormat("el-GR", { timeZone: "Europe/Athens", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+const when = (utc) => (utc ? athens.format(new Date(utc.replace(" ", "T") + "Z")) : "—");
+
+async function api(path, body) {
+  const opt = body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json", "X-Agent": "1" }, body: JSON.stringify(body) };
+  const res = await fetch(path, opt);
+  const data = await res.json().catch(() => ({ error: "Μη αναμενόμενη απάντηση" }));
+  if (!res.ok) throw new Error(data.error || "Σφάλμα");
+  return data;
+}
+
+// ------------------------------------------------------------------ filters
+const state = { filters: {}, tab: "overview", options: null, controls: {} };
+function query() {
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries(state.filters)) if (v) p.set(k, v);
+  return p.toString();
+}
+function buildFilters(o) {
+  const sel = (key, label, items, any) => {
+    const s = el("select", { onchange: (e) => { state.filters[key] = e.target.value; refresh(); } }, el("option", { value: "" }, any));
+    for (const it of items) s.append(el("option", { value: it.value ?? it }, it.label ?? it));
+    state.controls[key] = s;
+    return el("label", {}, label, s);
+  };
+  put($("filters"), 
+    sel("program", "Πρόγραμμα", o.programs, "Όλα"),
+    sel("period_from", "Από μήνα", o.periods, "Αρχή"),
+    sel("period_to", "Έως μήνα", o.periods, "Τέλος"),
+    sel("merchant", "Συνεργάτης", o.merchants, "Όλοι"),
+    sel("category", "Category", o.categories, "Όλες"),
+    sel("status", "Κατάσταση", o.statuses, "Όλες"),
+    el("label", {}, "Προσφορά", el("input", { type: "search", placeholder: "κείμενο…", oninput: debounce((e) => { state.filters.q = e.target.value; refresh(); }) })),
+    el("button", { class: "btn", onclick: () => { location.href = "/api/export.xlsx?" + query(); } }, "Λήψη Excel"),
+  );
+}
+// Narrow the filters to one month and open its offers.
+function showMonth(period) {
+  for (const k of ["period_from", "period_to"]) { state.filters[k] = period; state.controls[k].value = period; }
+  document.querySelector('nav button[data-tab="detail"]').click();
+  refresh();
+}
+function debounce(fn, ms = 300) { let t; return (e) => { clearTimeout(t); t = setTimeout(() => fn(e), ms); }; }
+
+// ------------------------------------------------------------------ tooltip
+function tip(node, text) {
+  node.addEventListener("mousemove", (e) => { const t = $("tip"); t.textContent = text; t.style.display = "block"; t.style.left = Math.min(e.clientX + 12, innerWidth - 330) + "px"; t.style.top = e.clientY + 14 + "px"; });
+  node.addEventListener("mouseleave", () => { $("tip").style.display = "none"; });
+  node.setAttribute("aria-label", text);
+}
+
+// ----------------------------------------------------------------- overview
+function tile(k, v, n) { return el("div", { class: "tile" }, el("div", { class: "k" }, k), el("div", { class: "v" }, v), el("div", { class: "n" }, n || "")); }
+function renderOverview(s) {
+  const r = s.requests;
+  const tiles = el("div", { class: "tiles" },
+    tile("Σύνολο εξαργυρώσεων", num(s.total_redeemed), `από ${num(s.reported)} στις ${num(s.offers)} προσφορές (κάλυψη ${pct(s.coverage)})`),
+    tile("Μέσο μηνιαίο πλήθος", dec(s.monthly_average), `σύνολο ÷ ${num(s.months_with_data)} μήνες με δεδομένα`),
+    tile("Redemption Rate", pct(s.rate), "Redeemed ÷ Assigned, στις προσφορές με απάντηση"),
+    tile("Ανταπόκριση", pct(r.response_rate), `${num(r.completed)} ολοκληρωμένα από ${num(r.sent)} αιτήματα που παραδόθηκαν`),
+    tile("Εκκρεμότητες", num(r.pending + r.partial + r.review + r.undelivered), `${num(r.pending)} σε αναμονή · ${num(r.partial)} μερικά · ${num(r.review)} προς έλεγχο · ${num(r.undelivered)} ανεπίδοτα · ${num(r.exhausted)} με ${state.options.max_followups} υπενθυμίσεις`),
+  );
+  // Monthly table: the same figures as the "Σύνοψη" sheet of the Excel file,
+  // newest month first, with a bar beside the redemptions for a quick comparison.
+  const max = Math.max(1, ...s.monthly.map((m) => m.redeemed));
+  const th = (t, cls) => el("th", { class: cls || "" }, t);
+  const monthRows = [...s.monthly].reverse().map((m) => {
+    const bar = el("div", { class: "mbar" }, el("div", { class: "fill", style: `width:${(m.redeemed / max) * 100}%` }));
+    tip(bar, `${m.label}: ${num(m.redeemed)} εξαργυρώσεις`);
+    return el("tr", {},
+      el("td", {}, m.label),
+      el("td", { class: "num strong" }, num(m.redeemed)), el("td", { class: "barcell" }, bar),
+      el("td", { class: "num" }, num(m.assigned)),
+      el("td", { class: "num" }, `${num(m.reported)} / ${num(m.offers)}`),
+      el("td", { class: "num" }, pct(m.offers ? m.reported / m.offers : null)),
+      el("td", { class: "num" }, m.open ? el("span", { class: "st pend" }, num(m.open)) : "0"),
+      el("td", {}, el("a", { class: "link", onclick: () => showMonth(m.period) }, "προσφορές")));
+  });
+  const sum = (k) => s.monthly.reduce((t, m) => t + m[k], 0);
+  const trend = el("div", { class: "card", style: "margin-bottom:12px" }, el("h2", {}, "Εξαργυρώσεις ανά μήνα"),
+    el("div", { class: "cap" }, "Καταχωρημένες εξαργυρώσεις κάθε μήνα και πόσες προσφορές έχουν απάντηση. Όσο ένας μήνας έχει ανοικτές εκκρεμότητες, το σύνολό του είναι ελλιπές."),
+    s.monthly.length ? el("div", { class: "tablewrap flat" }, el("table", {},
+      el("thead", {}, el("tr", {}, th("Μήνας"), th("Εξαργυρώσεις", "num"), th(""), th("Κουπόνια που δόθηκαν", "num"), th("Προσφορές με απάντηση", "num"), th("Κάλυψη", "num"), th("Ανοικτές εκκρεμότητες", "num"), th(""))),
+      el("tbody", {}, monthRows),
+      s.monthly.length > 1 ? el("tfoot", {}, el("tr", {}, el("td", {}, "Σύνολο επιλογής"), el("td", { class: "num strong" }, num(sum("redeemed"))), el("td", {}),
+        el("td", { class: "num" }, num(sum("assigned"))), el("td", { class: "num" }, `${num(sum("reported"))} / ${num(sum("offers"))}`),
+        el("td", { class: "num" }, pct(s.coverage)), el("td", { class: "num" }, num(sum("open"))), el("td", {}))) : null))
+      : el("div", { class: "empty" }, "Δεν υπάρχουν δεδομένα."));
+  const rank = (title, cap, list) => {
+    const mx = Math.max(1, ...list.map((x) => x.redeemed));
+    return el("div", { class: "card" }, el("h2", {}, title), el("div", { class: "cap" }, cap),
+      list.length ? list.map((x) => {
+        const row = el("div", { class: "hbar" }, el("div", { class: "name" }, x.name),
+          el("div", { class: "track" }, el("div", { class: "fill", style: `width:${(x.redeemed / mx) * 100}%` })), el("div", { class: "num" }, num(x.redeemed)));
+        tip(row, `${x.name}: ${num(x.redeemed)} εξαργυρώσεις`);
+        return row;
+      }) : el("div", { class: "empty" }, "Δεν υπάρχουν δεδομένα."));
+  };
+  put($("overview"), tiles, trend, el("div", { class: "grid2" },
+    rank("Κορυφαίοι συνεργάτες", "Κατά πλήθος καταχωρημένων εξαργυρώσεων στην επιλογή", s.top_merchants),
+    rank("Κορυφαίες προσφορές", "Κατά πλήθος καταχωρημένων εξαργυρώσεων στην επιλογή", s.top_offers)));
+}
+
+// ------------------------------------------------------------------- detail
+const ST_CLASS = { "Δηλώθηκε": "ok", "Προς έλεγχο": "rev", "Εκκρεμεί απάντηση": "pend", "Ανεπίδοτο email": "rev", "Συνεργάτης χωρίς email": "rev" };
+function renderDetail(rows, s) {
+  if (!rows.length) return put($("detail"), el("div", { class: "empty" }, "Καμία προσφορά με αυτά τα φίλτρα."));
+  const monthLabel = Object.fromEntries(state.options.periods.map((p) => [p.value, p.label]));
+  const head = el("tr", {}, ["Μήνας", "Πρόγραμμα", "Συνεργάτης", "Κωδικός", "Offer", "Category"].map((h) => el("th", {}, h)),
+    ["Assigned", "Redeemed", "Rate"].map((h) => el("th", { class: "num" }, h)), el("th", {}, "Κατάσταση"), el("th", {}, ""));
+  const shown = rows.slice(0, 1000);
+  const body = shown.map((r) => el("tr", {},
+    el("td", {}, monthLabel[r.period] || r.period), el("td", {}, r.program), el("td", {}, r.merchant || "—"),
+    // The first 8 characters are the code partners see in the emails; the full UUID is in the tooltip and in the Excel file.
+    el("td", { class: "code", title: "UUID: " + r.uuid }, r.uuid.startsWith("report-") ? "—" : r.uuid.slice(0, 8)), el("td", { class: "offer" }, r.offer), el("td", {}, r.category || "—"),
+    el("td", { class: "num" }, num(r.assigned)), el("td", { class: "num" }, num(r.redeemed)), el("td", { class: "num" }, pct(r.rate)),
+    el("td", {}, el("span", { class: "st " + (ST_CLASS[r.status] || "") }, r.status)),
+    el("td", {}, r.request_id && r.request_status !== "draft" ? el("a", { class: "link", onclick: () => openThread(r.request_id) }, "αλληλογραφία") : null)));
+  put($("detail"), 
+    el("div", { class: "note", style: "margin-bottom:8px" }, `${num(rows.length)} προσφορές · Assigned ${num(s.total_assigned)} · Redeemed ${num(s.total_redeemed)} (σε ${num(s.reported)} προσφορές με απάντηση)` + (rows.length > shown.length ? ` · εμφανίζονται οι πρώτες ${num(shown.length)}, το Excel τις έχει όλες` : "")),
+    el("div", { class: "tablewrap" }, el("table", {}, el("thead", {}, head), el("tbody", {}, body))));
+}
+
+// ------------------------------------------------------------------ threads
+function messagesView(messages) {
+  return messages.map((m) => el("div", { class: "msg " + m.direction },
+    el("div", { class: "meta" }, `${m.direction === "in" ? "←" : "→"} ${KIND[m.kind] || m.kind} · ${when(m.at)} · ${m.direction === "in" ? m.from : m.to || ""}` + (m.attachments.length ? ` · συνημμένα: ${m.attachments.join(", ")}` : "")),
+    el("pre", {}, m.body), m.note ? el("div", { class: "note" }, "Ανάγνωση: " + m.note) : null));
+}
+async function openThread(id) {
+  const t = await api("/api/thread?id=" + id);
+  const d = $("dlg");
+  put(d, el("h3", { style: "margin-top:0" }, `${t.merchant} · ${t.period}`),
+    el("div", { class: "note" }, `${REQ_STATUS[t.status] || t.status} · υπενθυμίσεις ${t.followups_sent}`),
+    el("div", { class: "offers" }, el("div", { class: "h" }, "Προσφορά"), el("div", { class: "h" }, "Assigned"), el("div", { class: "h" }, "Redeemed"),
+      t.offers.map((o) => [el("div", {}, o.admin_name), el("div", { class: "num" }, num(o.assigned)), el("div", { class: "num" }, num(o.redeemed))])),
+    messagesView(t.messages), el("div", { class: "actions" }, el("button", { class: "btn", onclick: () => d.close() }, "Κλείσιμο")));
+  d.showModal();
+}
+
+// ------------------------------------------------------------------- review
+function reviewItem(t) {
+  const inputs = {};
+  const msg = el("span", { class: "note" });
+  const grid = el("div", { class: "offers" }, el("div", { class: "h" }, "Προσφορά"), el("div", { class: "h" }, "Assigned"), el("div", { class: "h" }, "Redeemed"));
+  for (const o of t.offers) {
+    const inp = el("input", { type: "number", min: "0", step: "1", inputmode: "numeric", placeholder: "—", "aria-label": "Εξαργυρώσεις: " + o.admin_name });
+    if (o.redeemed != null) inp.value = o.redeemed;
+    inputs[o.uuid] = { inp, old: o.redeemed, review: o.status === "needs_review", assigned: o.assigned, name: o.admin_name };
+    grid.append(el("div", {}, o.admin_name, o.status === "needs_review" ? el("span", { class: "badge" }, "αντίφαση") : null), el("div", { class: "num" }, num(o.assigned)), inp);
+  }
+  const save = el("button", { class: "btn primary", onclick: async () => {
+    const values = {};
+    for (const [uuid, x] of Object.entries(inputs)) {
+      const raw = x.inp.value.trim();
+      if (raw === "") continue;
+      const v = Number(raw);
+      if (!Number.isInteger(v) || v < 0) { msg.className = "note err"; msg.textContent = "Μόνο ακέραιοι αριθμοί, 0 ή μεγαλύτεροι."; return; }
+      if (v !== x.old || x.review) values[uuid] = v;
+    }
+    if (!Object.keys(values).length) { msg.className = "note err"; msg.textContent = "Συμπλήρωσε τουλάχιστον μία τιμή. Τα κενά μένουν κενά, δεν γίνονται 0."; return; }
+    // Two things worth a second look before saving. Neither is forbidden:
+    // coupons handed out in earlier months can be redeemed now, and a partner
+    // may truly have answered for some offers only.
+    const all = Object.values(inputs);
+    const over = all.filter((x) => x.inp.value.trim() !== "" && x.assigned != null && Number(x.inp.value) > x.assigned);
+    const empty = all.filter((x) => x.inp.value.trim() === "");
+    const warn = [];
+    if (over.length) warn.push("Περισσότερες εξαργυρώσεις από τα κουπόνια που δόθηκαν τον μήνα:\n" + over.map((x) => `  • ${x.name}: ${x.inp.value} εξαργυρώσεις, ${x.assigned} κουπόνια`).join("\n"));
+    if (empty.length) warn.push(`${empty.length} από τις ${all.length} προσφορές θα μείνουν χωρίς τιμή και το αίτημα θα μείνει ως «μερική απάντηση»:\n` + empty.map((x) => `  • ${x.name}`).join("\n"));
+    if (warn.length && !confirm(warn.join("\n\n") + "\n\nΝα γίνει η καταχώριση;")) return;
+    save.disabled = true;
+    try { await api("/api/values", { request_id: t.id, values }); await refresh(); }
+    catch (e) { msg.className = "note err"; msg.textContent = e.message; save.disabled = false; }
+  } }, "Καταχώριση τιμών");
+  const clarify = el("button", { class: "btn", onclick: async () => {
+    const { text } = await api("/api/clarification?id=" + t.id);
+    const ta = el("textarea", {}, text), err = el("span", { class: "note err" });
+    const d = $("dlg");
+    const send = el("button", { class: "btn primary", onclick: async () => {
+      send.disabled = true;
+      try { await api("/api/clarify", { request_id: t.id, text: ta.value }); d.close(); await refresh(); }
+      catch (e) { err.textContent = e.message; send.disabled = false; }
+    } }, "Αποστολή email");
+    put(d, el("h3", { style: "margin-top:0" }, "Διευκρίνιση προς " + t.merchant),
+      el("div", { class: "note" }, "Στέλνεται στο ίδιο νήμα με το αρχικό αίτημα. Το αίτημα γυρίζει σε «αναμονή απάντησης»."), ta,
+      el("div", { class: "actions" }, send, el("button", { class: "btn", onclick: () => d.close() }, "Άκυρο"), err));
+    d.showModal();
+  } }, "Ζήτα διευκρίνιση…");
+  return el("div", { class: "card item" }, el("h3", {}, `${t.merchant} · ${t.period}`),
+    el("div", { class: "reason" }, t.reason), messagesView(t.messages.filter((m) => m.direction === "in").map((m) => ({ ...m, note: null }))), grid,
+    el("div", { class: "actions" }, save, clarify,
+      el("button", { class: "btn", title: "Η απάντηση δεν είναι στοιχεία (π.χ. «θα σας στείλουμε», απουσία) ή δεν αλλάζει κάτι. Οι υπενθυμίσεις συνεχίζουν για ό,τι λείπει.", onclick: async (e) => {
+        e.target.disabled = true;
+        try { await api("/api/keep-waiting", { request_id: t.id }); await refresh(); }
+        catch (x) { msg.className = "note err"; msg.textContent = x.message; e.target.disabled = false; }
+      } }, "Δεν χρειάζεται ενέργεια"),
+      el("a", { class: "link", onclick: () => openThread(t.id) }, "όλη η αλληλογραφία"), msg));
+}
+function unmatchedItem(m, open) {
+  const sel = el("select", {}, el("option", { value: "" }, "Επίλεξε αίτημα…"), open.map((r) => el("option", { value: r.id }, r.label)));
+  const err = el("span", { class: "note err" });
+  const act = (fn) => async () => { try { await fn(); await refresh(); } catch (e) { err.textContent = e.message; } };
+  return el("div", { class: "card item" }, el("h3", {}, "Email χωρίς αντιστοίχιση"),
+    el("div", { class: "note" }, `${when(m.at)} · ${m.from} · ${m.subject || ""}`), el("div", { class: "msg in" }, el("pre", {}, m.body)),
+    el("div", { class: "actions" }, sel,
+      el("button", { class: "btn primary", onclick: act(async () => { if (!sel.value) throw new Error("Επίλεξε αίτημα."); await api("/api/assign", { message_id: m.id, request_id: Number(sel.value) }); }) }, "Αντιστοίχιση και ανάγνωση"),
+      el("button", { class: "btn", onclick: act(() => api("/api/ignore", { message_id: m.id })) }, "Δεν αφορά αίτημα"), err));
+}
+function contactItem(t) {
+  const undelivered = t.status === "undelivered";
+  const input = el("input", { type: "text", style: "min-width:320px", value: t.contacts.join(", "), "aria-label": "Διευθύνσεις email του συνεργάτη" });
+  const err = el("span", { class: "note err" });
+  const act = (fn) => async (e) => { e.target.disabled = true; try { await fn(); await refresh(); } catch (x) { err.textContent = x.message; e.target.disabled = false; } };
+  return el("div", { class: "card item" }, el("h3", {}, `${t.merchant} · ${t.period}`, el("span", { class: "badge" }, "πρόβλημα επαφής")),
+    el("div", { class: "reason" }, undelivered
+      ? `Το αίτημα δεν παραδόθηκε: ${t.failed.join(", ") || "άγνωστη διεύθυνση"}. Δεν στέλνονται υπενθυμίσεις μέχρι να διορθωθεί.`
+      : `Απέτυχε η παράδοση στο ${t.failed.join(", ")}. Το αίτημα παραδόθηκε στους υπόλοιπους παραλήπτες.`),
+    el("div", { class: "msg in" }, el("div", { class: "meta" }, "Μήνυμα του mail server"), el("pre", {}, t.bounce_text)),
+    el("div", { class: "actions" }, el("label", { class: "note" }, "Σωστές διευθύνσεις (χωρισμένες με κόμμα) ", input),
+      el("button", { class: "btn primary", onclick: act(() => api("/api/resend", { request_id: t.id, emails: input.value.split(/[,;\s]+/).filter(Boolean) })) }, "Διόρθωση και επαναποστολή"),
+      undelivered ? null : el("button", { class: "btn", onclick: act(() => api("/api/dismiss-bounce", { request_id: t.id })) }, "Δεν χρειάζεται ενέργεια"),
+      el("a", { class: "link", onclick: () => openThread(t.id) }, "όλη η αλληλογραφία"), err));
+}
+function noEmailList(list) {
+  if (!list.length) return null;
+  const monthLabel = Object.fromEntries(state.options.periods.map((p) => [p.value, p.label]));
+  return el("div", { class: "card item" }, el("h3", {}, "Συνεργάτες χωρίς email"),
+    el("div", { class: "note", style: "margin:6px 0 10px" }, "Έχουν προσφορές στον μήνα αλλά καμία διεύθυνση, οπότε δεν μπορεί να σταλεί αίτημα. Συμπληρώστε το αρχείο επαφών και ξαναφορτώστε το."),
+    el("table", {}, el("thead", {}, el("tr", {}, el("th", {}, "Συνεργάτης"), el("th", {}, "Μήνας"), el("th", { class: "num" }, "Προσφορές"))),
+      el("tbody", {}, list.map((x) => el("tr", {}, el("td", {}, x.merchant), el("td", {}, monthLabel[x.period] || x.period), el("td", { class: "num" }, num(x.offers)))))));
+}
+function renderReview(q) {
+  const n = q.requests.length + q.unmatched.length + q.contact_problems.length;
+  $("qcount").hidden = !n; $("qcount").textContent = n;
+  put($("review"), n || q.no_email.length
+    ? [q.contact_problems.map(contactItem), q.requests.map(reviewItem), q.unmatched.map((m) => unmatchedItem(m, q.open_requests)), noEmailList(q.no_email)]
+    : el("div", { class: "empty" }, "Τίποτα δεν περιμένει έλεγχο."));
+}
+
+// ----------------------------------------------------------------- requests
+function renderRequests(list) {
+  if (!list.length) return put($("requests"), el("div", { class: "empty" }, "Δεν έχει σταλεί κανένα αίτημα."));
+  const cls = { completed: "ok", replied: "rev", undelivered: "rev", sent: "pend", partial: "pend" };
+  const head = el("tr", {}, ["Μήνας", "Συνεργάτης", "Κατάσταση", "Στάλθηκε"].map((h) => el("th", {}, h)), el("th", { class: "num" }, "Προσφορές με τιμή"), el("th", { class: "num" }, "Υπενθυμίσεις"), el("th", {}, ""));
+  put($("requests"), el("div", { class: "tablewrap" }, el("table", {}, el("thead", {}, head), el("tbody", {}, list.map((r) => el("tr", {},
+    el("td", {}, r.period), el("td", {}, r.merchant), el("td", {}, el("span", { class: "st " + (cls[r.status] || "") }, REQ_STATUS[r.status] || r.status)), el("td", {}, when(r.sent_at)),
+    el("td", { class: "num" }, `${r.filled} / ${r.offers}`), el("td", { class: "num" }, `${r.followups_sent} / ${state.options.max_followups}`),
+    el("td", {}, el("a", { class: "link", onclick: () => openThread(r.id) }, "αλληλογραφία"))))))));
+}
+
+// ----------------------------------------------------------------- settings
+const STAGE = {
+  not_due: "Δεν έχει έρθει ακόμη η ημέρα έναρξης",
+  waiting_file: "Περιμένει το αρχείο assignments του μήνα",
+  awaiting_approval: "Τα αιτήματα είναι έτοιμα και περιμένουν έγκριση αποστολής",
+  in_progress: "Σε εξέλιξη",
+  done: "Τα αιτήματα έχουν σταλεί",
+};
+const JOB = { cycle: "Κύκλος", fetch: "Απαντήσεις", followups: "Υπενθυμίσεις", scheduler: "Σύστημα" };
+function renderSettings({ values, status }) {
+  // Keep what the admin is typing: do not rebuild the form while it has unsaved changes.
+  if (state.settingsDirty && $("settings").childElementCount) return;
+  const v = { ...values }, msg = el("span", { class: "note" });
+  const dirty = () => { state.settingsDirty = true; msg.className = "note"; msg.textContent = "Υπάρχουν αλλαγές που δεν έχουν αποθηκευτεί."; };
+  const field = (label, help, control) => el("div", { class: "field" }, el("div", { class: "lab" }, label), control, help ? el("div", { class: "help" }, help) : null);
+  const check = (key) => el("input", { type: "checkbox", checked: v[key], "aria-label": key, onchange: (e) => { v[key] = e.target.checked; dirty(); } });
+  const number = (key, min, max) => el("input", { type: "number", min, max, step: 1, value: v[key], onchange: (e) => { v[key] = Number(e.target.value); dirty(); } });
+  const time = (key) => el("input", { type: "time", value: v[key], onchange: (e) => { v[key] = e.target.value; dirty(); } });
+  const rule = el("select", { onchange: (e) => { v.cycle_day_rule = e.target.value; day.disabled = v.cycle_day_rule !== "day_of_month"; dirty(); } },
+    el("option", { value: "first_working_day", selected: v.cycle_day_rule === "first_working_day" }, "Πρώτη εργάσιμη του μήνα"),
+    el("option", { value: "day_of_month", selected: v.cycle_day_rule === "day_of_month" }, "Συγκεκριμένη ημέρα του μήνα"));
+  const day = number("cycle_day", 1, 28);
+  day.disabled = v.cycle_day_rule !== "day_of_month";
+  const extra = el("textarea", { placeholder: "2026-12-24\n2027-01-02", oninput: (e) => { v.extra_holidays = e.target.value.split(/[\s,;]+/).filter(Boolean); dirty(); } }, v.extra_holidays.join("\n"));
+
+  const act = (fn, done) => async (e) => {
+    e.target.disabled = true; msg.className = "note"; msg.textContent = "…";
+    try { const r = await fn(); state.settingsDirty = false; await refresh(); if (done) alert(done(r)); }
+    catch (x) { msg.className = "note err"; msg.textContent = x.message; e.target.disabled = false; }
+  };
+  const save = el("button", { class: "btn primary", onclick: act(() => api("/api/settings", { values: v })) }, "Αποθήκευση");
+
+  const banner = !values.automation_enabled
+    ? el("div", { class: "banner" }, "Ο αυτοματισμός είναι απενεργοποιημένος: τίποτα δεν στέλνεται ούτε παραλαμβάνεται αυτόματα. Οι εντολές και τα κουμπιά δουλεύουν κανονικά.")
+    : !status.scheduler_alive
+      ? el("div", { class: "banner" }, "Ο αυτοματισμός είναι ενεργός αλλά ο χρονοπρογραμματιστής δεν τρέχει. Ξεκινήστε τον με «make run».")
+      : el("div", { class: "banner ok" }, "Ο αυτοματισμός είναι ενεργός και ο χρονοπρογραμματιστής τρέχει." + (status.mode === "test" ? " Δοκιμαστική λειτουργία: emails φεύγουν μόνο προς τις επιτρεπόμενες διευθύνσεις." : ""));
+
+  const monthLabel = Object.fromEntries(state.options.periods.map((p) => [p.value, p.label]));
+  const approve = status.stage === "awaiting_approval" || (status.drafts && status.stage !== "not_due")
+    ? el("button", { class: "btn primary", onclick: act(() => {
+        if (!confirm(`Να σταλούν τώρα ${status.drafts} αιτήματα για τον ${monthLabel[status.period] || status.period};`)) throw new Error("Ακυρώθηκε.");
+        return api("/api/automation/approve", { period: status.period });
+      }, (r) => r.summary) }, `Αποστολή ${status.drafts} αιτημάτων`) : null;
+  const now = el("div", { class: "card" }, el("h2", {}, "Τι συμβαίνει τώρα"),
+    el("dl", { class: "kv", style: "margin:10px 0" },
+      el("dt", {}, "Κύκλος για τον μήνα"), el("dd", {}, monthLabel[status.period] || status.period),
+      el("dt", {}, "Έναρξη κύκλου"), el("dd", {}, when(status.cycle_start)),
+      el("dt", {}, "Κατάσταση"), el("dd", {}, STAGE[status.stage] + (status.stage === "waiting_file" ? ` (ένα .xlsx με «${status.period}» στο όνομα, στον φάκελο input)` : "")),
+      el("dt", {}, "Επόμενος κύκλος"), el("dd", {}, when(status.next_cycle_start)),
+      el("dt", {}, "Τελευταίος έλεγχος εισερχομένων"), el("dd", {}, when(status.last_fetch)),
+      el("dt", {}, "Υπενθυμίσεις σήμερα"), el("dd", {}, status.reminders_today ? "Έγινε ο σημερινός έλεγχος" : status.sending_today ? `Στις ${values.reminder_time}` : "Όχι σήμερα (μη εργάσιμη)")),
+    el("div", { class: "actions" }, approve,
+      el("button", { class: "btn", onclick: act(() => api("/api/automation/fetch", {}), (r) => r.summary) }, "Έλεγχος εισερχομένων τώρα")));
+
+  const holidays = el("div", { class: "card" }, el("h2", {}, "Επόμενες αργίες"),
+    el("div", { class: "cap" }, "Με «μόνο εργάσιμες», αυτές τις ημέρες και τα Σαββατοκύριακα δεν φεύγει κανένα email."),
+    status.holidays.length ? el("dl", { class: "kv" }, status.holidays.map((h) => [el("dt", {}, new Date(h.date + "T12:00:00Z").toLocaleDateString("el-GR", { weekday: "short", day: "numeric", month: "short", year: "numeric" })), el("dd", {}, h.name)]))
+      : el("div", { class: "note" }, "Καμία αργία στο ημερολόγιο."));
+
+  const form = el("div", { class: "sgrid" },
+    el("div", { class: "card" }, el("h2", {}, "Γενικά"),
+      field("Αυτοματισμός ενεργός", "Κύριος διακόπτης. Όταν είναι κλειστός, ο agent δεν κάνει τίποτα μόνος του.", check("automation_enabled")),
+      field("Emails μόνο τις εργάσιμες", "Αιτήματα και υπενθυμίσεις δεν φεύγουν Σαββατοκύριακα και αργίες.", check("working_days_only")),
+      field("Ελληνικές επίσημες αργίες", "Πρωτοχρονιά, Θεοφάνεια, Καθαρά Δευτέρα, 25η Μαρτίου, Πάσχα, Πρωτομαγιά, Αγίου Πνεύματος, 15 Αυγούστου, 28η Οκτωβρίου, Χριστούγεννα.", check("greek_holidays")),
+      field("Επιπλέον αργίες", "Μία ημερομηνία ανά γραμμή, στη μορφή ΕΕΕΕ-ΜΜ-ΗΗ.", extra)),
+    el("div", { class: "card" }, el("h2", {}, "Μηνιαίος κύκλος"),
+      field("Ο κύκλος ξεκινά", "Ζητά τα στοιχεία του προηγούμενου ημερολογιακού μήνα.", rule),
+      field("Ημέρα του μήνα", "Ισχύει με «συγκεκριμένη ημέρα». Αν πέσει σε μη εργάσιμη, πηγαίνει στην επόμενη εργάσιμη.", day),
+      field("Ώρα έναρξης", "Ώρα Ελλάδας.", time("cycle_time")),
+      field("Έγκριση πριν την αποστολή", "Τα αιτήματα ετοιμάζονται αυτόματα, αλλά φεύγουν μόνο όταν πατηθεί «Αποστολή» σε αυτή τη σελίδα.", check("require_approval"))),
+    el("div", { class: "card" }, el("h2", {}, "Υπενθυμίσεις και απαντήσεις"),
+      field("Ημέρες μεταξύ υπενθυμίσεων", "Μετά το αρχικό email και μετά από κάθε υπενθύμιση ή απάντηση.", number("followup_days", 1, 60)),
+      field("Πλήθος υπενθυμίσεων", "Μετά από τόσες, το αίτημα μένει ως εκκρεμότητα για την ομάδα. 0 = καμία.", number("max_followups", 0, 10)),
+      field("Ώρα αποστολής υπενθυμίσεων", "Μία φορά την ημέρα, ώρα Ελλάδας.", time("reminder_time")),
+      field("Έλεγχος εισερχομένων κάθε (λεπτά)", "Κάθε πότε διαβάζονται οι νέες απαντήσεις.", number("poll_minutes", 5, 1440))));
+
+  const runs = el("div", { class: "card" }, el("h2", {}, "Τι έκανε ο agent"), el("div", { class: "cap" }, "Οι τελευταίες αυτόματες ενέργειες και τα σφάλματά τους."),
+    status.runs.length ? el("table", { class: "runs" }, el("tbody", {}, status.runs.map((r) => el("tr", {}, el("td", {}, when(r.at)), el("td", {}, JOB[r.job] || r.job), el("td", { class: r.level }, r.message)))))
+      : el("div", { class: "note" }, "Καμία αυτόματη ενέργεια ακόμη."));
+
+  put($("settings"), banner, el("div", { class: "sgrid" }, now, holidays), form, el("div", { class: "savebar" }, save, msg), runs);
+}
+
+// --------------------------------------------------------------------- main
+async function refresh() {
+  try {
+    const [rep, q, reqs, cfg] = await Promise.all([api("/api/report?" + query()), api("/api/queue"), api("/api/requests"), api("/api/settings")]);
+    state.options.max_followups = cfg.values.max_followups;
+    renderOverview(rep.summary); renderDetail(rep.rows, rep.summary); renderReview(q); renderRequests(reqs); renderSettings(cfg);
+  } catch (e) { put($("overview"), el("div", { class: "empty err" }, "Σφάλμα: " + e.message)); }
+}
+for (const b of document.querySelectorAll("nav button")) b.addEventListener("click", () => {
+  state.tab = b.dataset.tab;
+  history.replaceState(null, "", "#" + state.tab);
+  for (const x of document.querySelectorAll("nav button")) x.setAttribute("aria-selected", x === b);
+  for (const s of document.querySelectorAll("main > section")) s.hidden = s.id !== state.tab;
+  $("filters").hidden = ["review", "requests", "settings"].includes(state.tab);
+});
+(async () => {
+  state.options = await api("/api/options");
+  buildFilters(state.options);
+  $("dbinfo").textContent = "Βάση: " + state.options.db + (state.options.db === "demo.db" ? " · επινοημένα δεδομένα για επίδειξη, κανένα email δεν στέλνεται" : "");
+  if (state.options.mode === "test") { $("mode").hidden = false; $("mode").textContent = "Δοκιμαστική λειτουργία"; }
+  await refresh();
+  // A link such as …/#review opens straight on that tab.
+  document.querySelector(`nav button[data-tab="${CSS.escape(location.hash.slice(1))}"]`)?.click();
+})();
+</script>
+</body>
+</html>
